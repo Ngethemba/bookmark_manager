@@ -437,12 +437,13 @@ class InstagramBot:
     async def find_target_from_thread_api(self, thread_url, excluded_usernames=None):
         """Thread API'den karşı tarafın paylaştığı içerik sahibini bul.
 
+        Tüm paylaşımları kontrol et ve geçerli hedeflerin tamamını liste olarak döndür.
         Yalnızca partner tarafından gönderilen item'lar dikkate alınır.
         """
         excluded_usernames = {u.lower() for u in (excluded_usernames or set()) if u}
         thread_id = self._extract_thread_id_from_url(thread_url)
         if not thread_id:
-            return None
+            return []
 
         data = await self.page.evaluate(
             """
@@ -450,9 +451,7 @@ class InstagramBot:
                 const out = {
                     ok: false,
                     status: -1,
-                    username: null,
-                    source_text: '',
-                    source_links: [],
+                    candidates: [],
                     reason: '',
                     item_types: [],
                     partner_item_count: 0
@@ -570,24 +569,20 @@ class InstagramBot:
                             candidate = findNestedUsername(item);
                         }
 
-                        if (candidate) {
-                            out.username = String(candidate);
-                            out.source_text = text;
-                            out.source_links = [...new Set(links)];
-                            return out;
-                        }
-
-                        // Link varsa ama kullanıcı adı yoksa yine python tarafında çözüm denensin.
-                        if (links.length) {
-                            out.username = null;
-                            out.source_text = text;
-                            out.source_links = [...new Set(links)];
-                            out.reason = 'link_only';
-                            return out;
+                        // Username bulunduysa veya link bulunduysa, aday listesine ekle
+                        if (candidate || links.length) {
+                            out.candidates.push({
+                                username: candidate ? String(candidate) : null,
+                                source_text: text,
+                                source_links: [...new Set(links)]
+                            });
                         }
                     }
 
-                    out.reason = 'no_partner_share_item';
+                    if (out.candidates.length === 0) {
+                        out.reason = 'no_partner_share_item';
+                    }
+                    out.candidates_count = out.candidates.length;
                     return out;
                 } catch (err) {
                     out.reason = String(err || '');
@@ -599,60 +594,60 @@ class InstagramBot:
         )
 
         if not data:
-            return {
-                'username': None,
-                'source_text': '',
-                'source_links': [],
-                'matched_link': None,
-                'source': 'thread_api',
-                'debug': {'reason': 'no_data'}
-            }
+            return []
 
-        username = (data.get('username') or '').strip().lower()
-        links = data.get('source_links') or []
-        text = data.get('source_text') or ''
+        # Tüm candidate'ları kontrol et
+        candidates = data.get('candidates', [])
+        if len(candidates) > 0:
+            print(f"  [DEBUG] {len(candidates)} paylaşılan içerik kontrol ediliyor...")
+        valid_targets = []
+        
+        for i, candidate_data in enumerate(candidates, 1):
+            username = (candidate_data.get('username') or '').strip().lower()
+            links = candidate_data.get('source_links') or []
+            text = candidate_data.get('source_text') or ''
 
-        if username:
-            if self._is_reserved_instagram_segment(username):
-                return None
-            if username in excluded_usernames:
-                return None
-            if self._is_valid_username(username):
-                return {
-                    'username': username,
-                    'source_text': text,
-                    'source_links': links,
-                    'matched_link': (links[0] if links else None),
-                    'source': 'thread_api'
-                }
+            # Username bulunduysa kontrol et
+            if username:
+                # Debug çıktı
+                reason = ""
+                if self._is_reserved_instagram_segment(username):
+                    reason = "[reserved]"
+                elif username in excluded_usernames:
+                    reason = "[partner]"
+                elif not self._is_valid_username(username):
+                    reason = "[invalid_format]"
+                
+                if reason:
+                    print(f"    {i}. @{username} - atlandı {reason}")
+                    continue
+                
+                if self._is_valid_username(username):
+                    print(f"    {i}. @{username} ✓")
+                    valid_targets.append({
+                        'username': username,
+                        'source_text': text,
+                        'source_links': links,
+                        'matched_link': (links[0] if links else None),
+                        'source': 'thread_api'
+                    })
+                    continue
 
-        # API link döndürdüyse Python tarafında URL çöz.
-        for link in links:
-            normalized = self._normalize_shared_instagram_link(link)
-            resolved = await self.resolve_username_from_instagram_url(normalized or link)
-            if resolved and resolved.lower() not in excluded_usernames:
-                return {
-                    'username': resolved.lower(),
-                    'source_text': text,
-                    'source_links': links,
-                    'matched_link': link,
-                    'source': 'thread_api_link'
-                }
+            # Eğer username bulunamadıysa linklerden çöz
+            for link in links:
+                normalized = self._normalize_shared_instagram_link(link)
+                resolved = await self.resolve_username_from_instagram_url(normalized or link)
+                if resolved and resolved.lower() not in excluded_usernames:
+                    valid_targets.append({
+                        'username': resolved.lower(),
+                        'source_text': text,
+                        'source_links': links,
+                        'matched_link': link,
+                        'source': 'thread_api_link'
+                    })
+                    break
 
-        return {
-            'username': None,
-            'source_text': text,
-            'source_links': links,
-            'matched_link': None,
-            'source': 'thread_api',
-            'debug': {
-                'ok': data.get('ok'),
-                'status': data.get('status'),
-                'reason': data.get('reason'),
-                'item_types': data.get('item_types', []),
-                'partner_item_count': data.get('partner_item_count', 0)
-            }
-        }
+        return valid_targets
 
     async def resolve_username_from_instagram_url(self, url):
         """Instagram URL'sinden kullanıcı adını çıkar. Post/Reels linklerinde sayfadan çöz."""
@@ -1223,65 +1218,83 @@ class InstagramBot:
                 partner_username = await self.extract_username_from_thread_context()
                 excluded = {partner_username.lower()} if partner_username else set()
 
-                api_target = await self.find_target_from_thread_api(
+                api_targets = await self.find_target_from_thread_api(
                     thread_url=thread_url,
                     excluded_usernames=excluded
                 )
-                api_debug = (api_target or {}).get('debug', {})
+                candidates_count = len(api_targets or [])
+                if candidates_count > 0:
+                    print(f"  [DEBUG] API'den {candidates_count} geçerli hedef bulundu")
 
-                target = api_target if (api_target and api_target.get('username')) else None
-
-                if not target:
-                    target = await self.find_target_from_shared_links(
+                targets_to_process = list(api_targets or [])
+                if not targets_to_process:
+                    fallback_target = await self.find_target_from_shared_links(
                         limit=60,
                         excluded_usernames=excluded
                     )
-                username = (target or {}).get('username')
-                source_text = (target or {}).get('source_text', '')
-                source_links = (target or {}).get('source_links', [])
+                    if fallback_target and fallback_target.get('username'):
+                        targets_to_process.append(fallback_target)
 
-                if not username:
+                if not targets_to_process:
                     print("  ⚠ Paylaşılan post/reel/hesap linkinden hedef bulunamadı")
                     results['skipped'] += 1
                     results['details'].append({
                         'thread': thread_url,
                         'status': 'skipped_no_shared_target',
                         'partner_username': partner_username,
-                        'message_preview': (source_text or '')[:120],
-                        'links_found': (source_links or [])[:5],
-                        'api_debug': api_debug
+                        'message_preview': '',
+                        'links_found': [],
+                        'api_targets_found': candidates_count
                     })
                     continue
 
-                follow_status = await self.ensure_following(username)
+                # Max 15 hedef işle (browser crash'ını önlemek için)
+                max_targets = 15
+                for target in targets_to_process[:max_targets]:
+                    username = (target or {}).get('username')
+                    source_text = (target or {}).get('source_text', '')
+                    source_links = (target or {}).get('source_links', [])
 
-                if follow_status == 'followed':
-                    results['followed'] += 1
-                elif follow_status == 'follow_attempted':
-                    results['follow_attempted'] += 1
-                elif follow_status == 'already_following':
-                    results['already'] += 1
+                    if not username:
+                        results['skipped'] += 1
+                        results['details'].append({
+                            'thread': thread_url,
+                            'status': 'skipped_invalid_target',
+                            'partner_username': partner_username,
+                            'message_preview': (source_text or '')[:120],
+                            'links_found': (source_links or [])[:5]
+                        })
+                        continue
 
-                hearted = False
-                if follow_status in ('followed', 'follow_attempted', 'already_following'):
-                    # Profilden geri dönüp aynı konuşmada kalp bırak
-                    await self.page.goto(thread_url)
-                    await self.random_delay(1.5, 2.5)
-                    hearted = await self.leave_heart_on_current_thread(
-                        source_text=source_text,
-                        source_links=source_links
-                    )
-                    if hearted:
-                        results['hearted'] += 1
-                else:
-                    print("  ⚠ Takip doğrulanamadığı için kalp adımı atlandı")
+                    follow_status = await self.ensure_following(username)
 
-                results['details'].append({
-                    'thread': thread_url,
-                    'username': username,
-                    'follow_status': follow_status,
-                    'hearted': hearted
-                })
+                    if follow_status == 'followed':
+                        results['followed'] += 1
+                    elif follow_status == 'follow_attempted':
+                        results['follow_attempted'] += 1
+                    elif follow_status == 'already_following':
+                        results['already'] += 1
+
+                    hearted = False
+                    if follow_status in ('followed', 'follow_attempted', 'already_following'):
+                        # Profilden geri dönüp aynı konuşmada kalp bırak
+                        await self.page.goto(thread_url)
+                        await self.random_delay(1.5, 2.5)
+                        hearted = await self.leave_heart_on_current_thread(
+                            source_text=source_text,
+                            source_links=source_links
+                        )
+                        if hearted:
+                            results['hearted'] += 1
+                    else:
+                        print("  ⚠ Takip doğrulanamadığı için kalp adımı atlandı")
+
+                    results['details'].append({
+                        'thread': thread_url,
+                        'username': username,
+                        'follow_status': follow_status,
+                        'hearted': hearted
+                    })
             except Exception as e:
                 print(f"  ✗ Konuşma işlenemedi: {str(e)[:70]}")
                 results['skipped'] += 1

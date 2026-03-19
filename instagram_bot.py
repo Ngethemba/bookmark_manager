@@ -569,12 +569,24 @@ class InstagramBot:
                             candidate = findNestedUsername(item);
                         }
 
+                        const reactionObj = (item && item.reactions && typeof item.reactions === 'object') ? item.reactions : null;
+                        const reactionCount = reactionObj
+                            ? ((Array.isArray(reactionObj.emojis) ? reactionObj.emojis.length : 0)
+                                + (Array.isArray(reactionObj.likes) ? reactionObj.likes.length : 0)
+                                + Number(reactionObj.count || 0)
+                                + Number(reactionObj.like_count || 0))
+                            : 0;
+                        const hasViewerReaction = !!(item && (item.has_viewer_reaction || item.viewer_reaction));
+                        const alreadyReacted = hasViewerReaction || reactionCount > 0;
+
                         // Username bulunduysa veya link bulunduysa, aday listesine ekle
                         if (candidate || links.length) {
                             out.candidates.push({
+                                item_id: (item && (item.item_id || item.client_context)) ? String(item.item_id || item.client_context) : '',
                                 username: candidate ? String(candidate) : null,
                                 source_text: text,
-                                source_links: [...new Set(links)]
+                                source_links: [...new Set(links)],
+                                already_reacted: alreadyReacted
                             });
                         }
                     }
@@ -606,6 +618,8 @@ class InstagramBot:
             username = (candidate_data.get('username') or '').strip().lower()
             links = candidate_data.get('source_links') or []
             text = candidate_data.get('source_text') or ''
+            item_id = (candidate_data.get('item_id') or '').strip()
+            already_reacted = bool(candidate_data.get('already_reacted'))
 
             # Username bulunduysa kontrol et
             if username:
@@ -625,11 +639,13 @@ class InstagramBot:
                 if self._is_valid_username(username):
                     print(f"    {i}. @{username} ✓")
                     valid_targets.append({
+                        'item_id': item_id,
                         'username': username,
                         'source_text': text,
                         'source_links': links,
                         'matched_link': (links[0] if links else None),
-                        'source': 'thread_api'
+                        'source': 'thread_api',
+                        'already_reacted': already_reacted
                     })
                     continue
 
@@ -639,11 +655,13 @@ class InstagramBot:
                 resolved = await self.resolve_username_from_instagram_url(normalized or link)
                 if resolved and resolved.lower() not in excluded_usernames:
                     valid_targets.append({
+                        'item_id': item_id,
                         'username': resolved.lower(),
                         'source_text': text,
                         'source_links': links,
                         'matched_link': link,
-                        'source': 'thread_api_link'
+                        'source': 'thread_api_link',
+                        'already_reacted': already_reacted
                     })
                     break
 
@@ -1121,9 +1139,88 @@ class InstagramBot:
         """Açık DM konuşmasında hedef mesaja kalp bırak."""
         source_links = source_links or []
 
+        def normalized_link_key(url):
+            if not url:
+                return ''
+            normalized = self._normalize_shared_instagram_link(url) or url
+            return normalized.strip().rstrip('/').lower()
+
+        async def row_has_heart_reaction(row):
+            try:
+                return await row.evaluate(
+                    """
+                    (el) => {
+                        const text = (el.innerText || '').toLowerCase();
+                        if (text.includes('❤️') || text.includes('❤')) return true;
+
+                        const labelNodes = el.querySelectorAll('[aria-label], [alt], [title]');
+                        for (const node of labelNodes) {
+                            const label = (
+                                node.getAttribute('aria-label') ||
+                                node.getAttribute('alt') ||
+                                node.getAttribute('title') ||
+                                ''
+                            ).toLowerCase();
+                            if (!label) continue;
+                            if (label.includes('heart') || label.includes('kalp')) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                    """
+                )
+            except Exception:
+                return False
+
+        async def click_heart_via_reaction_menu(row):
+            try:
+                await row.hover()
+            except Exception:
+                pass
+
+            open_menu_selectors = [
+                '[aria-label*="React"]',
+                '[aria-label*="Tepki"]',
+                '[aria-label*="reaction"]',
+                'button[aria-label*="emoji"]',
+                'div[role="button"][aria-label*="React"]',
+                'div[role="button"][aria-label*="Tepki"]'
+            ]
+
+            for selector in open_menu_selectors:
+                try:
+                    btn = await row.query_selector(selector)
+                    if btn:
+                        await btn.click(timeout=1500)
+                        await self.random_delay(0.5, 0.9)
+                        break
+                except Exception:
+                    continue
+
+            heart_selectors = [
+                '[aria-label="❤️"]',
+                '[aria-label*="Heart"]',
+                '[aria-label*="Kalp"]',
+                '[aria-label*="love"]'
+            ]
+            for selector in heart_selectors:
+                try:
+                    heart_btn = await self.page.query_selector(selector)
+                    if heart_btn:
+                        await heart_btn.click(timeout=1800)
+                        await self.random_delay(0.6, 1.0)
+                        return True
+                except Exception:
+                    continue
+
+            return False
+
         # Önce hedef mesaj satırını bularak reaksiyon dene.
         try:
             rows = await self.page.query_selector_all('div[role="row"]')
+            source_link_keys = {normalized_link_key(link) for link in source_links if normalized_link_key(link)}
+
             for row in reversed(rows):
                 row_text = (await row.inner_text()).strip()
                 row_links = await row.evaluate("""
@@ -1131,56 +1228,41 @@ class InstagramBot:
                         .map(a => a.href)
                         .filter(Boolean)
                 """)
+                row_link_keys = {normalized_link_key(link) for link in (row_links or []) if normalized_link_key(link)}
 
                 text_match = bool(source_text and row_text and source_text[:80] in row_text)
-                link_match = any(link in (row_links or []) for link in source_links)
+                link_match = bool(source_link_keys and (source_link_keys & row_link_keys))
 
                 if text_match or link_match:
-                    await row.dblclick(timeout=2500)
-                    await self.random_delay(0.8, 1.2)
-                    print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı")
-                    return True
+                    had_reaction_before = await row_has_heart_reaction(row)
+                    if had_reaction_before:
+                        print("  ✓ Hedef mesajda zaten kalp reaksiyonu var")
+                        return True
+
+                    reaction_verified = False
+                    for _ in range(2):
+                        await row.dblclick(timeout=2500)
+                        await self.random_delay(0.8, 1.2)
+                        if await row_has_heart_reaction(row):
+                            reaction_verified = True
+                            break
+
+                    if reaction_verified:
+                        print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (doğrulandı)")
+                        return True
+
+                    # Çift tık başarısızsa reaction menüsünden kalp dene.
+                    menu_clicked = await click_heart_via_reaction_menu(row)
+                    if menu_clicked and await row_has_heart_reaction(row):
+                        print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (menü + doğrulama)")
+                        return True
+
+                    print("  ⚠ Hedef mesaj bulundu ancak reaksiyon doğrulanamadı")
+                    return False
         except Exception:
             pass
 
-        # Fallback 1: son mesaj satırına çift tık ile reaksiyon dene
-        try:
-            rows = await self.page.query_selector_all('div[role="row"]')
-            for row in reversed(rows):
-                text = (await row.inner_text()).strip()
-                if text:
-                    await row.dblclick(timeout=2000)
-                    await self.random_delay(0.8, 1.2)
-                    print("  ✓ Son mesaja kalp reaksiyonu bırakıldı")
-                    return True
-        except Exception:
-            pass
-
-        # Fallback 2: hiçbir şekilde reaksiyon bulunamazsa kalp mesajı gönder.
-        input_selectors = [
-            'textarea[placeholder*="Mesaj"]',
-            'textarea[placeholder*="Message"]',
-            'div[role="textbox"]'
-        ]
-        for selector in input_selectors:
-            try:
-                msg_box = await self.page.wait_for_selector(selector, timeout=2500)
-                if not msg_box:
-                    continue
-
-                await msg_box.click()
-                if selector.startswith('textarea'):
-                    await msg_box.fill('❤️')
-                else:
-                    await self.page.keyboard.type('❤️', delay=40)
-                await self.page.keyboard.press('Enter')
-                await self.random_delay(0.8, 1.2)
-                print("  ✓ Reaksiyon bulunamadı, kalp mesajı gönderildi")
-                return True
-            except Exception:
-                continue
-
-        print("  ✗ Kalp bırakma başarısız")
+        print("  ⚠ Hedef mesaja doğrudan reaksiyon bırakma başarısız")
         return False
 
     async def process_direct_messages_for_follow(self, max_threads=10):
@@ -1233,6 +1315,7 @@ class InstagramBot:
                         excluded_usernames=excluded
                     )
                     if fallback_target and fallback_target.get('username'):
+                        fallback_target.setdefault('already_reacted', False)
                         targets_to_process.append(fallback_target)
 
                 if not targets_to_process:
@@ -1250,7 +1333,39 @@ class InstagramBot:
 
                 # Max 15 hedef işle (browser crash'ını önlemek için)
                 max_targets = 15
-                for target in targets_to_process[:max_targets]:
+                deduped_targets = []
+                seen_target_keys = set()
+                for target in targets_to_process:
+                    item_id = (target.get('item_id') or '').strip()
+                    username_key = (target.get('username') or '').strip().lower()
+                    link_key = (target.get('matched_link') or '').strip()
+                    text_key = (target.get('source_text') or '').strip()[:80]
+                    key = item_id or f"{username_key}|{link_key}|{text_key}"
+                    if key in seen_target_keys:
+                        continue
+                    seen_target_keys.add(key)
+                    deduped_targets.append(target)
+
+                pending_targets = []
+                for target in deduped_targets:
+                    if target.get('already_reacted'):
+                        results['skipped'] += 1
+                        results['details'].append({
+                            'thread': thread_url,
+                            'username': (target or {}).get('username'),
+                            'status': 'skipped_already_reacted',
+                            'follow_status': None,
+                            'hearted': False
+                        })
+                        continue
+                    pending_targets.append(target)
+
+                if not pending_targets:
+                    print("  ✓ Bu konuşmada tepkisiz/emojisiz uygun paylaşım kalmadı")
+                    await self.random_delay(0.8, 1.3)
+                    continue
+
+                for target in pending_targets[:max_targets]:
                     username = (target or {}).get('username')
                     source_text = (target or {}).get('source_text', '')
                     source_links = (target or {}).get('source_links', [])
@@ -1267,6 +1382,10 @@ class InstagramBot:
                         continue
 
                     follow_status = await self.ensure_following(username)
+                    if follow_status in ('follow_attempted', 'unknown', 'error'):
+                        print("  ↺ Takip durumu net değil, tepkisiz mesaj için 1 kez daha deneniyor...")
+                        await self.random_delay(1.2, 2.0)
+                        follow_status = await self.ensure_following(username)
 
                     if follow_status == 'followed':
                         results['followed'] += 1
@@ -1276,7 +1395,7 @@ class InstagramBot:
                         results['already'] += 1
 
                     hearted = False
-                    if follow_status in ('followed', 'follow_attempted', 'already_following'):
+                    if follow_status in ('followed', 'already_following'):
                         # Profilden geri dönüp aynı konuşmada kalp bırak
                         await self.page.goto(thread_url)
                         await self.random_delay(1.5, 2.5)
@@ -1287,7 +1406,7 @@ class InstagramBot:
                         if hearted:
                             results['hearted'] += 1
                     else:
-                        print("  ⚠ Takip doğrulanamadığı için kalp adımı atlandı")
+                        print("  ⚠ Takip başarısız/doğrulanamadı, bu mesaja tepki bırakılmadı")
 
                     results['details'].append({
                         'thread': thread_url,

@@ -297,6 +297,53 @@ class InstagramBot:
             return False
         return bool(re.fullmatch(r'[A-Za-z0-9._]{1,30}', username))
 
+    def _normalize_thread_href(self, href):
+        """DM thread href'ini normalize et."""
+        if not href:
+            return None
+
+        cleaned = href.strip().split('#')[0].split('?')[0]
+        if not cleaned:
+            return None
+
+        if cleaned.startswith('http://') or cleaned.startswith('https://'):
+            match = re.search(r'https?://(?:www\.)?instagram\.com(/direct/t/[^/?#]+/?)', cleaned)
+            if not match:
+                return None
+            cleaned = match.group(1)
+
+        if not cleaned.startswith('/direct/t/'):
+            return None
+
+        parts = cleaned.strip('/').split('/')
+        if len(parts) < 3 or not parts[2]:
+            return None
+
+        return f"/direct/t/{parts[2]}/"
+
+    async def _collect_thread_links_from_dom(self):
+        """Sayfadaki DM konuşma linklerini topla ve normalize et."""
+        raw_links = await self.page.evaluate("""
+            () => {
+                const links = [];
+                document.querySelectorAll('a[href]').forEach(a => {
+                    const href = a.getAttribute('href') || '';
+                    if (href.includes('/direct/t/')) {
+                        links.push(href);
+                    }
+                });
+                return links;
+            }
+        """)
+
+        unique = []
+        for href in raw_links or []:
+            normalized = self._normalize_thread_href(href)
+            if normalized and normalized not in unique:
+                unique.append(normalized)
+
+        return unique
+
     async def resolve_username_from_instagram_url(self, url):
         """Instagram URL'sinden kullanıcı adını çıkar. Post/Reels linklerinde sayfadan çöz."""
         if not url:
@@ -338,64 +385,60 @@ class InstagramBot:
     async def get_recent_thread_links(self, max_threads=10):
         """DM kutusundaki son konuşma linklerini topla."""
         print("[DM] Inbox aciliyor...")
-        await self.page.goto('https://www.instagram.com/direct/inbox/')
-        
-        # KRITIK: Instagram dinamik JavaScript yümüklüyor - uzun bekle
-        # User testi: İlk 6-9 saniyede linkler yoktu, 10+ sonra çıktı
-        await self.random_delay(12, 15)
+        await self.page.goto('https://www.instagram.com/direct/inbox/', wait_until='domcontentloaded')
         await self.close_popups()
-        await self.random_delay(2, 3)
-        
+
         print("[DM] Thread linkler aranıyor...")
-        
-        try:
-            # Tüm <a> tag'larında /direct/t/ olan linkler al
-            # # sonrası normalizasyon: /direct/t/123# → /direct/t/123
-            thread_links = await self.page.evaluate("""
-                () => {
-                    const links = [];
-                    document.querySelectorAll('a').forEach(a => {
-                        const href = a.getAttribute('href') || '';
-                        if (href.includes('/direct/t/')) {
-                            const clean = href.split('#')[0];
-                            if (clean && !links.includes(clean)) {
-                                links.push(clean);
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            if attempt == 1:
+                await self.random_delay(12, 15)
+            else:
+                print(f"[DM] Deneme {attempt}/{attempts}: inbox yenileniyor...")
+                await self.page.reload(wait_until='domcontentloaded')
+                await self.random_delay(8, 10)
+
+            await self.close_popups()
+
+            # Sol konuşma listesinin yüklenmesine küçük bir pencere tanı.
+            try:
+                await self.page.wait_for_function(
+                    """() => !!document.querySelector('a[href*="/direct/t/"]')""",
+                    timeout=7000
+                )
+            except Exception:
+                pass
+
+            # Listeyi kaydırarak lazy-loaded thread'leri görünür kıl.
+            try:
+                await self.page.evaluate("""
+                    () => {
+                        const candidates = [
+                            document.querySelector('div[role="main"]'),
+                            ...document.querySelectorAll('div')
+                        ];
+                        for (const el of candidates) {
+                            if (!el) continue;
+                            if (el.scrollHeight > el.clientHeight + 120) {
+                                el.scrollTop = 0;
+                                el.scrollTop = Math.min(el.scrollHeight, 1200);
+                                break;
                             }
                         }
-                    });
-                    return links;
-                }
-            """)
-            
-            if thread_links and len(thread_links) > 0:
-                print(f"[DM] {len(thread_links)} thread bulundu!")
-                return thread_links[:max_threads]
-        
-        except Exception as e:
-            print(f"[DM] Hata: {str(e)[:60]}")
-            pass
-        
-        print("[DM] Thread bulunamadı - Retry yapılıyor...")
-        await self.page.reload()
-        await self.random_delay(5, 8)
-        
-        try:
-            threads_retry = await self.page.evaluate("""
-                () => {
-                    return [...new Set(
-                        [...document.querySelectorAll('a')]
-                            .map(a => a.href)
-                            .filter(h => h && h.includes('/direct/t/'))
-                            .map(h => h.split('#')[0])
-                    )];
-                }
-            """)
-            if threads_retry:
-                print(f"[DM] Retry sonrası {len(threads_retry)} thread bulundu")
-                return threads_retry[:max_threads]
-        except:
-            pass
-        
+                    }
+                """)
+                await self.random_delay(1.5, 2.5)
+            except Exception:
+                pass
+
+            try:
+                thread_links = await self._collect_thread_links_from_dom()
+                if thread_links:
+                    print(f"[DM] {len(thread_links)} thread bulundu!")
+                    return thread_links[:max_threads]
+            except Exception as e:
+                print(f"[DM] Link toplama hatası: {str(e)[:70]}")
+
         print("[DM] SORUN: Thread link bulunamadı!")
         print("[DM] Çözüm: DM inbox'ta en az 1 konuşmanın olması gerekiyor")
         return []
@@ -441,16 +484,19 @@ class InstagramBot:
                 return username
 
         if message_text:
-            mention_match = re.search(r'@([A-Za-z0-9._]{1,30})', message_text)
-            if mention_match:
-                candidate = mention_match.group(1).lower()
+            mention_matches = re.findall(r'@([A-Za-z0-9._]{1,30})', message_text)
+            for mention in mention_matches:
+                candidate = mention.lower().strip('.,:;!?)]}')
                 if self._is_valid_username(candidate):
                     return candidate
 
-            # Düz yazılmış kullanıcı adı olasılığı için basit desen
-            plain_match = re.search(r'\b([A-Za-z0-9._]{3,30})\b', message_text)
-            if plain_match:
-                candidate = plain_match.group(1).lower()
+            # Güvenli fallback: sadece "hesap/user/kullanıcı" anahtar kelimelerinden sonra gelen token.
+            contextual = re.findall(
+                r'(?i)(?:hesap|kullanici|kullanıcı|user|username)\s*[:=\-]?\s*([A-Za-z0-9._]{1,30})',
+                message_text
+            )
+            for token in contextual:
+                candidate = token.lower().strip('.,:;!?)]}')
                 if self._is_valid_username(candidate):
                     return candidate
 
@@ -483,7 +529,9 @@ class InstagramBot:
 
             follow_selectors = [
                 'button:has-text("Takip Et")',
-                'button:has-text("Follow")'
+                'button:has-text("Follow")',
+                'div[role="button"]:has-text("Takip Et")',
+                'div[role="button"]:has-text("Follow")'
             ]
             for selector in follow_selectors:
                 try:
@@ -491,8 +539,31 @@ class InstagramBot:
                     if btn:
                         await btn.click()
                         await self.random_delay(1.5, 2.5)
-                        print("  ✓ Hesap takip edildi")
-                        return 'followed'
+                        # Tıklama sonrası durumun gerçekten değiştiğini doğrula.
+                        verify_selectors = [
+                            'button:has-text("Takiptesin")',
+                            'button:has-text("Following")',
+                            'button:has-text("Requested")',
+                            'button:has-text("İstek Gönderildi")',
+                            'div[role="button"]:has-text("Takiptesin")',
+                            'div[role="button"]:has-text("Following")',
+                            'div[role="button"]:has-text("Requested")'
+                        ]
+                        verified = False
+                        for v_selector in verify_selectors:
+                            try:
+                                v_btn = await self.page.wait_for_selector(v_selector, timeout=1200)
+                                if v_btn:
+                                    verified = True
+                                    break
+                            except Exception:
+                                pass
+
+                        if verified:
+                            print("  ✓ Hesap takip edildi")
+                            return 'followed'
+                        print("  ⚠ Takip butonuna tıklandı, durum doğrulanamadı")
+                        return 'unknown'
                 except:
                     pass
 
@@ -504,7 +575,31 @@ class InstagramBot:
 
     async def leave_heart_on_current_thread(self):
         """Açık DM konuşmasında son mesaja kalp bırak."""
-        # Öncelik: son mesaja çift tık ile reaksiyon dene
+        # Öncelik: metin kutusuna kalp gönder.
+        input_selectors = [
+            'textarea[placeholder*="Mesaj"]',
+            'textarea[placeholder*="Message"]',
+            'div[role="textbox"]'
+        ]
+        for selector in input_selectors:
+            try:
+                msg_box = await self.page.wait_for_selector(selector, timeout=2500)
+                if not msg_box:
+                    continue
+
+                await msg_box.click()
+                if selector.startswith('textarea'):
+                    await msg_box.fill('❤️')
+                else:
+                    await self.page.keyboard.type('❤️', delay=40)
+                await self.page.keyboard.press('Enter')
+                await self.random_delay(0.8, 1.2)
+                print("  ✓ Mesaja kalp gönderildi")
+                return True
+            except Exception:
+                continue
+
+        # Fallback: son mesaja çift tık ile reaksiyon dene
         try:
             rows = await self.page.query_selector_all('div[role="row"]')
             for row in reversed(rows):
@@ -516,25 +611,6 @@ class InstagramBot:
                     return True
         except Exception:
             pass
-
-        # Fallback: DM kutusuna kalp gönder
-        input_selectors = [
-            'textarea[placeholder*="Mesaj"]',
-            'textarea[placeholder*="Message"]',
-            'div[role="textbox"]'
-        ]
-        for selector in input_selectors:
-            try:
-                msg_box = await self.page.wait_for_selector(selector, timeout=2500)
-                if msg_box:
-                    await msg_box.click()
-                    await msg_box.fill('❤️')
-                    await msg_box.press('Enter')
-                    await self.random_delay(0.8, 1.2)
-                    print("  ✓ Mesaja kalp gönderildi")
-                    return True
-            except Exception:
-                continue
 
         print("  ✗ Kalp bırakma başarısız")
         return False
@@ -563,6 +639,7 @@ class InstagramBot:
         for i, thread_href in enumerate(thread_links, 1):
             thread_url = f'https://www.instagram.com{thread_href}' if thread_href.startswith('/') else thread_href
             print(f"\n[{i}/{len(thread_links)}] Konuşma işleniyor...")
+            results['processed'] += 1
 
             try:
                 await self.page.goto(thread_url)
@@ -589,14 +666,17 @@ class InstagramBot:
                 elif follow_status == 'already_following':
                     results['already'] += 1
 
-                # Profilden geri dönüp aynı konuşmada kalp bırak
-                await self.page.goto(thread_url)
-                await self.random_delay(1.5, 2.5)
-                hearted = await self.leave_heart_on_current_thread()
-                if hearted:
-                    results['hearted'] += 1
+                hearted = False
+                if follow_status in ('followed', 'already_following'):
+                    # Profilden geri dönüp aynı konuşmada kalp bırak
+                    await self.page.goto(thread_url)
+                    await self.random_delay(1.5, 2.5)
+                    hearted = await self.leave_heart_on_current_thread()
+                    if hearted:
+                        results['hearted'] += 1
+                else:
+                    print("  ⚠ Takip doğrulanamadığı için kalp adımı atlandı")
 
-                results['processed'] += 1
                 results['details'].append({
                     'thread': thread_url,
                     'username': username,

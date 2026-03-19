@@ -339,98 +339,66 @@ class InstagramBot:
         """DM kutusundaki son konuşma linklerini topla."""
         print("[DM] Inbox aciliyor...")
         await self.page.goto('https://www.instagram.com/direct/inbox/')
-        await self.random_delay(6, 9)
+        
+        # KRITIK: Instagram dinamik JavaScript yümüklüyor - uzun bekle
+        # User testi: İlk 6-9 saniyede linkler yoktu, 10+ sonra çıktı
+        await self.random_delay(12, 15)
         await self.close_popups()
+        await self.random_delay(2, 3)
         
-        thread_links = []
+        print("[DM] Thread linkler aranıyor...")
         
-        # Konuşma butonlarından linkler almaya çalış
-        # Instagram'da her konuşma role="button" div'de olabilir
-        print("[DM] Konusma butonlari aranıyor...")
         try:
-            # Sayfada kaç button var?
-            buttons = await self.page.query_selector_all('[role="button"]')
-            print(f"[DM] {len(buttons)} button bulundu")
-            
-            # DM inbox'ta her thread bir button'dur - tıkla ve URL al
-            # Ama dikkat - tıklamak navigation yapabilir
-            # Bunun yerine: onclick attribute, data attributes, vb. kontrol et
-            
-            # JavaScript ile konuşmaları DOM'dan çıkar
-            threads_from_dom = await self.page.evaluate("""
+            # Tüm <a> tag'larında /direct/t/ olan linkler al
+            # # sonrası normalizasyon: /direct/t/123# → /direct/t/123
+            thread_links = await self.page.evaluate("""
                 () => {
-                    const threads = [];
-                    // Approach 1: href="/direct/t/" olan linkler
-                    const direct_t = [...document.querySelectorAll('a[href*="/direct/t/"]')].map(a => a.href);
-                    threads.push(...direct_t);
-                    
-                    // Approach 2: onclick event'i olan button'lar
-                    const buttons_with_click = [...document.querySelectorAll('[role="button"]')].filter(b => {
-                        const html = b.outerHTML;
-                        return html.includes('/direct/t/') || html.includes('/direct/') && html.includes('t/');
-                    }).map(b => b.outerHTML.substring(0, 150));
-                    
-                    // Approach 3: aria-label veya data-testid
-                    const aria_buttons = [...document.querySelectorAll('[data-testid*="conversation"], [data-testid*="thread"]')];
-                    
-                    // Approach 4: Tüm linkler içinde /direct/t/ ara ve daha kapsamlı
-                    const all_hrefs_with_t = [...document.querySelectorAll('a')].map(a => a.href).filter(h => h.includes('/direct/t/'));
-                    threads.push(...all_hrefs_with_t);
-                    
-                    // Approach 5: hidden links veya style="display:none" olanlar da kontrol et
-                    const hidden_directs = [...document.querySelectorAll('[href*="/direct/t/"]')].map(a => a.getAttribute('href'));
-                    threads.push(...hidden_directs.filter(Boolean));
-                    
-                    // Benzerleri çıkar
-                    return [...new Set(threads.filter(t => t && (t.includes('/direct/t/') || t.includes('/direct/') && t.includes('/'))))];
+                    const links = [];
+                    document.querySelectorAll('a').forEach(a => {
+                        const href = a.getAttribute('href') || '';
+                        if (href.includes('/direct/t/')) {
+                            const clean = href.split('#')[0];
+                            if (clean && !links.includes(clean)) {
+                                links.push(clean);
+                            }
+                        }
+                    });
+                    return links;
                 }
             """)
             
-            if threads_from_dom:
-                thread_links.extend(threads_from_dom)
-                print(f"[DM] JavaScript ile {len(threads_from_dom)} thread bulundu")
-            
+            if thread_links and len(thread_links) > 0:
+                print(f"[DM] {len(thread_links)} thread bulundu!")
+                return thread_links[:max_threads]
+        
         except Exception as e:
             print(f"[DM] Hata: {str(e)[:60]}")
+            pass
         
-        # Eğer hâlâ boşsa, tarayıcı tarafında click ve navigation olay'larını takip et
-        if not thread_links:
-            print("[DM] Direct linkler bulunamadı - devamından kontrol et...")
-            
-            # Instagram DM inbox yenileme
-            await self.page.reload()
-            await self.random_delay(3, 5)
-            
-            # Tekrar dene
-            try:
-                threads_retry = await self.page.evaluate("""
-                    () => {
-                        return [...new Set([...document.querySelectorAll('a')].map(a => a.href).filter(h => h.includes('/direct/t/')))];
-                    }
-                """)
-                if threads_retry:
-                    thread_links = threads_retry
-                    print(f"[DM] Yenileme sonrası {len(thread_links)} thread bulundu")
-            except:
-                pass
+        print("[DM] Thread bulunamadı - Retry yapılıyor...")
+        await self.page.reload()
+        await self.random_delay(5, 8)
         
-        # Hâlâ boşsa, sayfanın state'ini döküm et
-        if not thread_links:
-            print("[DM] SORUN: Konusma linkler bulunamadı!")
-            print("[DM]")
-            print("[DM] MANUEL ÇÖZÜM:")
-            print("[DM] 1. https://www.instagram.com/direct/inbox/ aç")
-            print("[DM] 2. F12 → Console")
-            print("[DM] 3. Şunu yapıştır ve ENTER'a bas:")
-            print("[DM]    [...document.querySelectorAll('a')].filter(a=>a.href.includes('/direct')).map(a=>({text:a.innerText,href:a.href})).slice(0,10)")
-            print("[DM] 4. Sonucu bana göster")
-            print("[DM]")
-            print("[DM] VEYA: DM inbox'ta konuşma yok olabilir - en az 1 konuşmanın var olması gerekmektedir")
-            return []
+        try:
+            threads_retry = await self.page.evaluate("""
+                () => {
+                    return [...new Set(
+                        [...document.querySelectorAll('a')]
+                            .map(a => a.href)
+                            .filter(h => h && h.includes('/direct/t/'))
+                            .map(h => h.split('#')[0])
+                    )];
+                }
+            """)
+            if threads_retry:
+                print(f"[DM] Retry sonrası {len(threads_retry)} thread bulundu")
+                return threads_retry[:max_threads]
+        except:
+            pass
         
-        final_links = list(set(thread_links))[:max_threads]
-        print(f"[DM] Sonuc: {len(final_links)} thread")
-        return final_links
+        print("[DM] SORUN: Thread link bulunamadı!")
+        print("[DM] Çözüm: DM inbox'ta en az 1 konuşmanın olması gerekiyor")
+        return []
 
     async def get_latest_message_payload(self):
         """Açık konuşmadaki en son mesajın metin ve linklerini al."""

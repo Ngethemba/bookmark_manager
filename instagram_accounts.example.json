@@ -1,0 +1,10 @@
+{
+  "selected": "default",
+  "accounts": [
+    {
+      "id": "default",
+      "name": "Default Account",
+      "profile": "default"
+    }
+  ]
+}

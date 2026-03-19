@@ -1,0 +1,2450 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yer İşareti Yöneticisi - Instagram & X</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --instagram: #E1306C;
+            --twitter: #1DA1F2;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo i {
+            font-size: 28px;
+            color: var(--primary);
+        }
+
+        .logo h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .nav-section {
+            margin-bottom: 25px;
+        }
+
+        .nav-section h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 5px;
+        }
+
+        .nav-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .nav-item.active {
+            background: var(--primary);
+        }
+
+        .nav-item i {
+            width: 20px;
+            text-align: center;
+        }
+
+        .nav-item .count {
+            margin-left: auto;
+            background: var(--bg-dark);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .platform-instagram {
+            color: var(--instagram);
+        }
+
+        .platform-x {
+            color: var(--twitter);
+        }
+
+        .category-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .category-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            padding: 30px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .header h2 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 15px;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 15px;
+            width: 300px;
+        }
+
+        .search-box input {
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            width: 100%;
+            margin-left: 10px;
+        }
+
+        .search-box input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .stat-card .icon {
+            width: 45px;
+            height: 45px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+
+        .stat-card .icon.instagram {
+            background: rgba(225, 48, 108, 0.2);
+            color: var(--instagram);
+        }
+
+        .stat-card .icon.x {
+            background: rgba(29, 161, 242, 0.2);
+            color: var(--twitter);
+        }
+
+        .stat-card .icon.total {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+        }
+
+        .stat-card .icon.favorite {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .stat-card h3 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: var(--bg-card);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .select-all {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .checkbox {
+            width: 22px;
+            height: 22px;
+            border: 2px solid #888;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .checkbox:hover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.3);
+        }
+
+        .checkbox.checked {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .checkbox.checked::after {
+            content: '✓';
+            color: white;
+            font-size: 12px;
+        }
+
+        .selected-count {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .toolbar-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* Bookmarks Grid */
+        .bookmarks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        .bookmark-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .bookmark-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary);
+        }
+
+        .bookmark-card.selected {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+        }
+
+        .bookmark-checkbox {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 20;
+            opacity: 1;
+        }
+        
+        .bookmark-card:hover .bookmark-checkbox {
+            opacity: 1;
+        }
+
+        .bookmark-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: var(--bg-hover);
+        }
+
+        .bookmark-content {
+            padding: 20px;
+        }
+
+        .bookmark-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .bookmark-platform {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--bg-dark);
+        }
+
+        .bookmark-platform.instagram {
+            color: var(--instagram);
+        }
+
+        .bookmark-platform.x {
+            color: var(--twitter);
+        }
+
+        .bookmark-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .bookmark-action {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: none;
+            background: var(--bg-dark);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .bookmark-action:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .bookmark-action.favorite.active {
+            color: var(--warning);
+        }
+
+        .bookmark-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .bookmark-author {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .bookmark-author i {
+            margin-right: 5px;
+        }
+
+        .bookmark-description {
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .bookmark-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 15px;
+        }
+
+        .tag {
+            background: var(--bg-dark);
+            color: var(--text-secondary);
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+        }
+
+        .bookmark-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+        }
+
+        .bookmark-category {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .bookmark-date {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: none;
+            background: var(--bg-dark);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            border-color: var(--primary);
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .platform-selector {
+            display: flex;
+            gap: 10px;
+        }
+
+        .platform-option {
+            flex: 1;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .platform-option:hover {
+            border-color: var(--text-secondary);
+        }
+
+        .platform-option.selected {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .platform-option.instagram.selected {
+            border-color: var(--instagram);
+            background: rgba(225, 48, 108, 0.1);
+        }
+
+        .platform-option.x.selected {
+            border-color: var(--twitter);
+            background: rgba(29, 161, 242, 0.1);
+        }
+
+        .platform-option i {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* Import Modal */
+        .import-tab {
+            transition: all 0.2s;
+        }
+
+        .import-tab.active {
+            background: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+
+        .import-area {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .import-area:hover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        .import-area i {
+            font-size: 48px;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+
+        .import-area p {
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .import-area small {
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 2000;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--danger);
+        }
+
+        .toast.success i {
+            color: var(--success);
+        }
+
+        .toast.error i {
+            color: var(--danger);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-state i {
+            font-size: 64px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .search-box {
+                width: 100%;
+            }
+
+            .bookmarks-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo">
+            <i class="fas fa-bookmark"></i>
+            <h1>Yer İşareti Yöneticisi</h1>
+        </div>
+
+        <nav class="nav-section">
+            <h3>Genel</h3>
+            <div class="nav-item active" data-filter="all">
+                <i class="fas fa-layer-group"></i>
+                <span>Tümü</span>
+                <span class="count" id="count-all">0</span>
+            </div>
+            <div class="nav-item" data-filter="favorites">
+                <i class="fas fa-star"></i>
+                <span>Favoriler</span>
+                <span class="count" id="count-favorites">0</span>
+            </div>
+            <div class="nav-item" data-filter="archived">
+                <i class="fas fa-archive"></i>
+                <span>Arşivlenenler</span>
+                <span class="count" id="count-archived">0</span>
+            </div>
+        </nav>
+
+        <nav class="nav-section">
+            <h3>Platformlar</h3>
+            <div class="nav-item" data-filter="instagram">
+                <i class="fab fa-instagram platform-instagram"></i>
+                <span>Instagram</span>
+                <span class="count" id="count-instagram">0</span>
+            </div>
+            <div class="nav-item" data-filter="x">
+                <i class="fab fa-x-twitter platform-x"></i>
+                <span>X (Twitter)</span>
+                <span class="count" id="count-x">0</span>
+            </div>
+        </nav>
+
+        <nav class="nav-section">
+            <h3>Kategoriler</h3>
+            <div id="categories-list">
+                <!-- Kategoriler buraya yüklenecek -->
+            </div>
+        </nav>
+
+        <div class="nav-section">
+            <button class="btn btn-secondary" style="width: 100%;" onclick="openCategoryModal()">
+                <i class="fas fa-plus"></i> Yeni Kategori
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="header">
+            <h2 id="page-title">Tüm Yer İşaretleri</h2>
+            <div class="header-actions">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="search-input" placeholder="Yer işaretlerinde ara...">
+                </div>
+                <button class="btn btn-secondary" onclick="openBulkAddModal()">
+                    <i class="fas fa-list"></i> Toplu Ekle
+                </button>
+                <button class="btn btn-secondary" onclick="openImportModal()">
+                    <i class="fas fa-file-import"></i> JSON İçe Aktar
+                </button>
+                <button class="btn btn-primary" onclick="openAddModal()">
+                    <i class="fas fa-plus"></i> Yeni Ekle
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="icon total">
+                    <i class="fas fa-bookmark"></i>
+                </div>
+                <h3 id="stat-total">0</h3>
+                <p>Toplam Kayıt</p>
+            </div>
+            <div class="stat-card">
+                <div class="icon instagram">
+                    <i class="fab fa-instagram"></i>
+                </div>
+                <h3 id="stat-instagram">0</h3>
+                <p>Instagram</p>
+            </div>
+            <div class="stat-card">
+                <div class="icon x">
+                    <i class="fab fa-x-twitter"></i>
+                </div>
+                <h3 id="stat-x">0</h3>
+                <p>X (Twitter)</p>
+            </div>
+            <div class="stat-card">
+                <div class="icon favorite">
+                    <i class="fas fa-star"></i>
+                </div>
+                <h3 id="stat-favorites">0</h3>
+                <p>Favoriler</p>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <div class="select-all" onclick="toggleSelectAll()">
+                    <div class="checkbox" id="select-all-checkbox"></div>
+                    <span>Tümünü Seç</span>
+                </div>
+                <span class="selected-count" id="selected-count">0 seçili</span>
+            </div>
+            <div class="toolbar-right" id="bulk-actions" style="display: none;">
+                <button class="btn btn-secondary" onclick="bulkArchive()">
+                    <i class="fas fa-archive"></i> Arşivle
+                </button>
+                <button class="btn btn-danger" onclick="bulkDelete()">
+                    <i class="fas fa-trash"></i> Sil
+                </button>
+                <button class="btn" onclick="openRemovalModal()" style="background: var(--instagram); color: white;">
+                    <i class="fab fa-instagram"></i> Instagram'dan Kaldır
+                </button>
+            </div>
+        </div>
+
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="font-size: 14px; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px;">
+                    <i class="fab fa-instagram" style="color: var(--instagram); margin-right: 8px;"></i>
+                    Instagram Hesap Seçimi
+                </h3>
+                <button class="btn btn-secondary" onclick="fetchInstagramAccounts()" style="padding: 8px 10px;">
+                    <i class="fas fa-rotate"></i>
+                </button>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <select id="quick-account-select" onchange="onQuickAccountSelectionChanged()" style="min-width: 240px; flex: 1; background: var(--bg-dark); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+                    <option value="">Hesaplar yükleniyor...</option>
+                </select>
+                <button class="btn btn-secondary" onclick="toggleAddAccountForm()">
+                    <i class="fas fa-user-plus"></i> Hesap Ekle
+                </button>
+                <button class="btn btn-secondary" onclick="setupSelectedAccountLogin()">
+                    <i class="fas fa-right-to-bracket"></i> Seçili Hesaba Giriş
+                </button>
+            </div>
+            <p id="quick-account-help" style="color: var(--text-secondary); font-size: 12px; margin-top: 10px;">
+                Kaldırma ve DM işlemlerinde bu hesap kullanılacak.
+            </p>
+        </div>
+
+        <!-- Bookmarks Grid -->
+        <div class="bookmarks-grid" id="bookmarks-grid">
+            <!-- Yer işaretleri buraya yüklenecek -->
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="empty-state" style="display: none;">
+            <i class="fas fa-bookmark"></i>
+            <h3>Henüz yer işareti yok</h3>
+            <p>Sosyal medya yer işaretlerinizi ekleyerek başlayın</p>
+            <button class="btn btn-primary" onclick="openAddModal()">
+                <i class="fas fa-plus"></i> İlk Yer İşaretini Ekle
+            </button>
+        </div>
+    </main>
+
+    <!-- Instagram Removal Bot Modal -->
+    <div class="modal-overlay" id="removal-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><i class="fab fa-instagram" style="color: var(--instagram); margin-right: 10px;"></i>Instagram'dan Kaldır</h3>
+                <button class="modal-close" onclick="closeRemovalModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Uyarı -->
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4 style="color: var(--warning); margin-bottom: 10px;">
+                        <i class="fas fa-exclamation-triangle"></i> Önemli Uyarılar
+                    </h4>
+                    <ul style="color: var(--text-secondary); font-size: 13px; line-height: 1.8; padding-left: 20px;">
+                        <li>Bot, tarayıcı otomasyonu kullanır (Playwright)</li>
+                        <li>Instagram hesabınıza manuel giriş yapmanız gerekecek</li>
+                        <li>Çok hızlı işlem hesabınızı riske atabilir</li>
+                        <li>Bot her işlem arasında güvenlik için bekler</li>
+                        <li>İşlemi istediğiniz zaman durdurabilirsiniz</li>
+                    </ul>
+                </div>
+
+                <!-- Seçili gönderiler özeti -->
+                <div id="removal-summary" style="background: var(--bg-dark); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4 style="margin-bottom: 5px;">Seçili Instagram Gönderileri</h4>
+                            <p style="color: var(--text-secondary); font-size: 14px;" id="removal-count">0 gönderi seçildi</p>
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 32px; color: var(--instagram);" id="removal-number">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- URL önizleme -->
+                <div id="removal-urls" style="max-height: 150px; overflow-y: auto; background: var(--bg-dark); padding: 10px; border-radius: 8px; margin-bottom: 20px;">
+                    <!-- URL'ler buraya -->
+                </div>
+
+                <!-- Hesap seçimi -->
+                <div style="background: var(--bg-dark); padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border);">
+                    <h4 style="margin-bottom: 12px;">Instagram Hesabı Seç</h4>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                        <select id="removal-account-select" onchange="onAccountSelectionChanged()" style="flex: 1; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+                            <option value="">Yükleniyor...</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="fetchInstagramAccounts()" style="padding: 10px 12px;">
+                            <i class="fas fa-rotate"></i>
+                        </button>
+                    </div>
+                    <p id="selected-account-help" style="color: var(--text-secondary); font-size: 12px; margin-bottom: 12px;">
+                        Bu hesapla giriş yapıp bookmark kaldırma işlemi yapılacak.
+                    </p>
+
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="toggleAddAccountForm()">
+                            <i class="fas fa-user-plus"></i> Hesap Ekle
+                        </button>
+                        <button class="btn btn-secondary" onclick="setupSelectedAccountLogin()">
+                            <i class="fas fa-right-to-bracket"></i> Seçili Hesapla Giriş Yap
+                        </button>
+                    </div>
+
+                    <div id="add-account-form" style="display: none; margin-top: 12px; gap: 10px;">
+                        <input id="new-account-name" type="text" placeholder="Örn: Deneme Hesabı" style="flex: 1; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+                        <button class="btn btn-primary" onclick="addInstagramAccount()">
+                            <i class="fas fa-plus"></i> Ekle
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Başlat butonu -->
+                <div id="removal-actions" style="text-align: center;">
+                    <button class="btn" onclick="startRemovalBot()" style="background: var(--instagram); color: white; padding: 15px 40px; font-size: 16px;">
+                        <i class="fab fa-instagram"></i> Botu Başlat
+                    </button>
+                    <p style="color: var(--text-secondary); font-size: 12px; margin-top: 10px;">
+                        Yeni bir terminal penceresi açılacak
+                    </p>
+                </div>
+
+                <!-- Bot çalışırken -->
+                <div id="removal-running" style="display: none; text-align: center; padding: 20px;">
+                    <i class="fas fa-robot" style="font-size: 48px; color: var(--instagram); margin-bottom: 15px;"></i>
+                    <h4>Bot Çalışıyor</h4>
+                    <p style="color: var(--text-secondary);">Terminal penceresindeki talimatları takip edin</p>
+                    <p style="color: var(--warning); margin-top: 10px; font-size: 13px;">
+                        <i class="fas fa-info-circle"></i> Instagram'a giriş yapın ve işlemin bitmesini bekleyin
+                    </p>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: var(--bg-hover); border-radius: 8px;">
+                        <h5 style="margin-bottom: 10px;"><i class="fas fa-list-check"></i> Kontrol Listesi:</h5>
+                        <div style="text-align: left; font-size: 13px; color: var(--text-secondary);">
+                            <p>1. Terminal penceresi açıldı mı?</p>
+                            <p>2. Instagram giriş sayfası geldi mi?</p>
+                            <p>3. 2FA kodu istendi mi? (Manuel girin)</p>
+                            <p>4. Kaldırma işlemi başladı mı?</p>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-secondary" onclick="resetBot()" style="margin-right: 10px;">
+                            <i class="fas fa-redo"></i> Sıfırla ve Tekrar Dene
+                        </button>
+                        <button class="btn" onclick="manualComplete()" style="background: var(--success);">
+                            <i class="fas fa-check"></i> İşlem Tamamlandı
+                        </button>
+                    </div>
+                    <p style="color: var(--text-secondary); font-size: 11px; margin-top: 10px;">
+                        Bot takıldıysa "Sıfırla" butonuna basın. İşlem bittiyse "Tamamlandı" butonuna basın.
+                    </p>
+                </div>
+
+                <!-- Tamamlandı -->
+                <div id="removal-complete" style="display: none; text-align: center; padding: 20px;">
+                    <i class="fas fa-check-circle" style="font-size: 48px; color: var(--success); margin-bottom: 15px;"></i>
+                    <h4>İşlem Tamamlandı</h4>
+                    <p id="removal-result-text" style="color: var(--text-secondary);"></p>
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-secondary" onclick="archiveRemoved()" style="margin-right: 10px;">
+                            <i class="fas fa-archive"></i> Kaldırılanları Arşivle
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteRemoved()">
+                            <i class="fas fa-trash"></i> Kaldırılanları Sil
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div class="modal-overlay" id="add-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Yeni Yer İşareti Ekle</h3>
+                <button class="modal-close" onclick="closeAddModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="bookmark-form">
+                    <input type="hidden" id="bookmark-id">
+                    
+                    <div class="form-group">
+                        <label>Platform</label>
+                        <div class="platform-selector">
+                            <div class="platform-option instagram" onclick="selectPlatform('instagram')">
+                                <i class="fab fa-instagram"></i>
+                                <div>Instagram</div>
+                            </div>
+                            <div class="platform-option x" onclick="selectPlatform('x')">
+                                <i class="fab fa-x-twitter"></i>
+                                <div>X (Twitter)</div>
+                            </div>
+                        </div>
+                        <input type="hidden" id="bookmark-platform" value="instagram">
+                    </div>
+
+                    <div class="form-group">
+                        <label>URL *</label>
+                        <input type="url" id="bookmark-url" placeholder="https://..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Başlık *</label>
+                        <input type="text" id="bookmark-title" placeholder="Yer işareti başlığı" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Yazar</label>
+                        <input type="text" id="bookmark-author" placeholder="@kullaniciadi">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Açıklama</label>
+                        <textarea id="bookmark-description" placeholder="Kısa bir açıklama..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Görsel URL</label>
+                        <input type="url" id="bookmark-image" placeholder="https://...">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Kategori</label>
+                        <select id="bookmark-category">
+                            <option value="">Kategori seç...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Notlar</label>
+                        <textarea id="bookmark-notes" placeholder="Kişisel notlarınız..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeAddModal()">İptal</button>
+                <button class="btn btn-primary" onclick="saveBookmark()">
+                    <i class="fas fa-save"></i> Kaydet
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal-overlay" id="import-modal">
+        <div class="modal" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-download" style="margin-right: 10px;"></i>Veri İçe Aktar</h3>
+                <button class="modal-close" onclick="closeImportModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Tab Navigation -->
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 15px;">
+                    <button class="btn btn-secondary import-tab active" onclick="switchImportTab('instagram')" id="tab-instagram">
+                        <i class="fab fa-instagram" style="color: var(--instagram);"></i> Instagram
+                    </button>
+                    <button class="btn btn-secondary import-tab" onclick="switchImportTab('twitter')" id="tab-twitter">
+                        <i class="fab fa-x-twitter" style="color: var(--twitter);"></i> X (Twitter)
+                    </button>
+                    <button class="btn btn-secondary import-tab" onclick="switchImportTab('json')" id="tab-json">
+                        <i class="fas fa-code"></i> Manuel JSON
+                    </button>
+                </div>
+
+                <!-- Instagram Tab -->
+                <div class="import-tab-content" id="content-instagram">
+                    <div style="background: linear-gradient(135deg, rgba(225, 48, 108, 0.1), rgba(131, 58, 180, 0.1)); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <i class="fab fa-instagram" style="color: var(--instagram); font-size: 24px;"></i>
+                            Instagram Verilerini İndir
+                        </h4>
+                        <ol style="color: var(--text-secondary); font-size: 14px; line-height: 2; padding-left: 20px;">
+                            <li>Instagram'da <strong>Ayarlar</strong> → <strong>Hesap Merkezi</strong>'ne git</li>
+                            <li><strong>Bilgileriniz ve izinleriniz</strong> → <strong>Bilgilerinizi indirin</strong></li>
+                            <li><strong>Bazı bilgilerinizi indirin</strong> seçeneğini seç</li>
+                            <li><strong>Kaydedilen gönderiler</strong> veya <strong>Saved</strong> kutusunu işaretle</li>
+                            <li>Format: <strong>JSON</strong> seç ve indir</li>
+                            <li>ZIP dosyasından <code>saved_posts.json</code> dosyasını çıkar</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="import-area" onclick="document.getElementById('instagram-file').click()">
+                        <i class="fab fa-instagram" style="color: var(--instagram);"></i>
+                        <p>Instagram JSON dosyasını yükle</p>
+                        <small>saved_posts.json veya saved_saved_media.json</small>
+                        <input type="file" id="instagram-file" accept=".json" style="display: none;" onchange="handleInstagramImport(event)">
+                    </div>
+                </div>
+
+                <!-- Twitter Tab -->
+                <div class="import-tab-content" id="content-twitter" style="display: none;">
+                    <div style="background: linear-gradient(135deg, rgba(29, 161, 242, 0.1), rgba(29, 161, 242, 0.05)); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                            <i class="fab fa-x-twitter" style="color: var(--twitter); font-size: 24px;"></i>
+                            X (Twitter) Verilerini İndir
+                        </h4>
+                        <ol style="color: var(--text-secondary); font-size: 14px; line-height: 2; padding-left: 20px;">
+                            <li>X.com'da <strong>Ayarlar</strong> → <strong>Hesabınız</strong>'a git</li>
+                            <li><strong>Verilerinizin bir arşivini indirin</strong> seçeneğine tıkla</li>
+                            <li>Şifrenizi girin ve arşivi talep edin</li>
+                            <li>E-posta ile indirme linki gelecek (1-2 gün sürebilir)</li>
+                            <li>ZIP'ten <code>data/bookmarks.js</code> dosyasını çıkar</li>
+                            <li>Dosyayı metin editöründe aç, başındaki <code>window.YTD.bookmark.part0 = </code> kısmını sil</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="import-area" onclick="document.getElementById('twitter-file').click()">
+                        <i class="fab fa-x-twitter" style="color: var(--twitter);"></i>
+                        <p>X/Twitter JSON dosyasını yükle</p>
+                        <small>bookmarks.json veya düzenlenmiş bookmarks.js</small>
+                        <input type="file" id="twitter-file" accept=".json,.js" style="display: none;" onchange="handleTwitterImport(event)">
+                    </div>
+                </div>
+
+                <!-- Manual JSON Tab -->
+                <div class="import-tab-content" id="content-json" style="display: none;">
+                    <div class="import-area" onclick="document.getElementById('import-file').click()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>JSON dosyasını sürükleyin veya tıklayın</p>
+                        <small>Desteklenen format: JSON</small>
+                        <input type="file" id="import-file" accept=".json" style="display: none;" onchange="handleImport(event)">
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: var(--bg-dark); border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px;">Örnek JSON Formatı:</h4>
+                        <pre style="font-size: 12px; color: var(--text-secondary); overflow-x: auto;">
+{
+  "bookmarks": [
+    {
+      "url": "https://instagram.com/p/xxx",
+      "title": "Başlık",
+      "platform": "instagram",
+      "original_author": "@kullanici"
+    }
+  ]
+}</pre>
+                    </div>
+                </div>
+
+                <!-- Import Progress -->
+                <div id="import-progress" style="display: none; margin-top: 20px; padding: 20px; background: var(--bg-dark); border-radius: 8px; text-align: center;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 32px; color: var(--primary); margin-bottom: 10px;"></i>
+                    <p>İçe aktarılıyor...</p>
+                </div>
+
+                <!-- Import Result -->
+                <div id="import-result" style="display: none; margin-top: 20px; padding: 20px; border-radius: 8px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Add Modal (Toplu URL Ekleme) -->
+    <div class="modal-overlay" id="bulk-add-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-list" style="margin-right: 10px;"></i>Toplu URL Ekleme</h3>
+                <button class="modal-close" onclick="closeBulkAddModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <p style="color: var(--text-secondary); font-size: 14px; margin: 0;">
+                        <i class="fas fa-info-circle" style="margin-right: 8px; color: var(--primary);"></i>
+                        Instagram veya X linklerini alt alta yapıştırın. Platform ve kullanıcı adı otomatik algılanır.
+                    </p>
+                </div>
+                
+                <div class="form-group">
+                    <label>URL'ler (her satıra bir URL)</label>
+                    <textarea id="bulk-urls" rows="10" placeholder="https://www.instagram.com/p/ABC123/
+https://x.com/user/status/123456
+https://twitter.com/user/status/789012
+..." style="font-family: monospace; font-size: 13px;"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Kategori (isteğe bağlı)</label>
+                    <select id="bulk-category">
+                        <option value="">Kategori seçilmedi</option>
+                    </select>
+                </div>
+
+                <div id="bulk-preview" style="display: none; margin-top: 20px;">
+                    <h4 style="margin-bottom: 10px;">Önizleme</h4>
+                    <div id="bulk-preview-list" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span id="bulk-count" style="margin-right: auto; color: var(--text-secondary);">0 URL</span>
+                <button class="btn btn-secondary" onclick="closeBulkAddModal()">İptal</button>
+                <button class="btn btn-primary" onclick="submitBulkAdd()">
+                    <i class="fas fa-plus"></i> Tümünü Ekle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Modal -->
+    <div class="modal-overlay" id="category-modal">
+        <div class="modal" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3>Yeni Kategori</h3>
+                <button class="modal-close" onclick="closeCategoryModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Kategori Adı</label>
+                    <input type="text" id="category-name" placeholder="Kategori adı">
+                </div>
+                <div class="form-group">
+                    <label>Renk</label>
+                    <input type="color" id="category-color" value="#3498db" style="height: 45px;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCategoryModal()">İptal</button>
+                <button class="btn btn-primary" onclick="saveCategory()">
+                    <i class="fas fa-save"></i> Kaydet
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        // State
+        let bookmarks = [];
+        let categories = [];
+        let selectedIds = new Set();
+        let currentFilter = 'all';
+        let searchQuery = '';
+        let instagramAccounts = [];
+        let selectedInstagramAccountId = 'default';
+
+        async function fetchInstagramAccounts() {
+            try {
+                const response = await fetch('/api/bot/accounts');
+                const data = await response.json();
+                instagramAccounts = data.accounts || [];
+                selectedInstagramAccountId = data.selected || (instagramAccounts[0] ? instagramAccounts[0].id : 'default');
+                renderInstagramAccountSelect();
+            } catch (error) {
+                showToast('Hesap listesi yüklenemedi', 'error');
+            }
+        }
+
+        function renderInstagramAccountSelect() {
+            const selects = [
+                document.getElementById('quick-account-select'),
+                document.getElementById('removal-account-select')
+            ].filter(Boolean);
+
+            if (!selects.length) return;
+
+            for (const select of selects) {
+                if (!instagramAccounts.length) {
+                    select.innerHTML = '<option value="">Hesap yok</option>';
+                    continue;
+                }
+
+                select.innerHTML = instagramAccounts
+                    .map(acc => `<option value="${acc.id}">${acc.name}</option>`)
+                    .join('');
+                select.value = selectedInstagramAccountId;
+            }
+
+            const selected = instagramAccounts.find(acc => acc.id === selectedInstagramAccountId);
+            const modalHelp = document.getElementById('selected-account-help');
+            const quickHelp = document.getElementById('quick-account-help');
+            const fallbackText = 'Bu hesapla giriş yapıp bookmark kaldırma işlemi yapılacak.';
+            if (modalHelp) {
+                modalHelp.textContent = selected ? `${selected.name} hesabı seçili.` : fallbackText;
+            }
+            if (quickHelp) {
+                quickHelp.textContent = selected ? `${selected.name} hesabı seçili. Bu hesap işlemlerde kullanılacak.` : 'Kaldırma ve DM işlemlerinde bu hesap kullanılacak.';
+            }
+        }
+
+        async function selectInstagramAccountById(accountId) {
+            if (!accountId) return;
+
+            try {
+                const response = await fetch('/api/bot/accounts/select', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_id: accountId })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    showToast(result.error || 'Hesap seçilemedi', 'error');
+                    return;
+                }
+
+                selectedInstagramAccountId = accountId;
+                renderInstagramAccountSelect();
+                showToast('Hesap seçildi', 'success');
+            } catch (error) {
+                showToast('Hesap seçme başarısız', 'error');
+            }
+        }
+
+        async function onAccountSelectionChanged() {
+            const select = document.getElementById('removal-account-select');
+            if (!select || !select.value) return;
+            await selectInstagramAccountById(select.value);
+        }
+
+        async function onQuickAccountSelectionChanged() {
+            const select = document.getElementById('quick-account-select');
+            if (!select || !select.value) return;
+            await selectInstagramAccountById(select.value);
+        }
+
+        function toggleAddAccountForm() {
+            const form = document.getElementById('add-account-form');
+            form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+            if (form.style.display === 'flex') {
+                document.getElementById('new-account-name').focus();
+            }
+        }
+
+        async function addInstagramAccount() {
+            const input = document.getElementById('new-account-name');
+            const name = input.value.trim();
+            if (!name) {
+                showToast('Hesap adı girin', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/bot/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    showToast(result.error || 'Hesap eklenemedi', 'error');
+                    return;
+                }
+
+                input.value = '';
+                document.getElementById('add-account-form').style.display = 'none';
+                showToast(result.message || 'Hesap eklendi', 'success');
+                await fetchInstagramAccounts();
+                await setupSelectedAccountLogin();
+            } catch (error) {
+                showToast('Hesap ekleme başarısız', 'error');
+            }
+        }
+
+        async function setupSelectedAccountLogin() {
+            const removalSelect = document.getElementById('removal-account-select');
+            const quickSelect = document.getElementById('quick-account-select');
+            const accountId =
+                (quickSelect && quickSelect.value) ||
+                (removalSelect && removalSelect.value) ||
+                selectedInstagramAccountId;
+            if (!accountId) {
+                showToast('Önce hesap seçin', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/bot/accounts/setup-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_id: accountId })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    showToast(result.error || 'Giriş penceresi açılamadı', 'error');
+                    return;
+                }
+
+                showToast(result.message || 'Giriş penceresi açıldı', 'success');
+            } catch (error) {
+                showToast('Hesap giriş penceresi açılamadı', 'error');
+            }
+        }
+
+        // API Functions
+        async function fetchBookmarks() {
+            const params = new URLSearchParams();
+            
+            if (currentFilter === 'instagram' || currentFilter === 'x') {
+                params.append('platform', currentFilter);
+            } else if (currentFilter === 'favorites') {
+                params.append('favorites', 'true');
+            } else if (currentFilter === 'archived') {
+                params.append('archived', 'true');
+            } else if (currentFilter.startsWith('category-')) {
+                params.append('category_id', currentFilter.replace('category-', ''));
+            }
+
+            if (searchQuery) {
+                params.append('search', searchQuery);
+            }
+
+            const response = await fetch(`/api/bookmarks?${params}`);
+            bookmarks = await response.json();
+            renderBookmarks();
+        }
+
+        async function fetchCategories() {
+            const response = await fetch('/api/categories');
+            categories = await response.json();
+            renderCategories();
+            updateCategorySelect();
+        }
+
+        async function fetchStats() {
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+            
+            document.getElementById('stat-total').textContent = stats.total;
+            document.getElementById('stat-instagram').textContent = stats.instagram;
+            document.getElementById('stat-x').textContent = stats.x;
+            document.getElementById('stat-favorites').textContent = stats.favorites;
+            
+            document.getElementById('count-all').textContent = stats.total;
+            document.getElementById('count-instagram').textContent = stats.instagram;
+            document.getElementById('count-x').textContent = stats.x;
+            document.getElementById('count-favorites').textContent = stats.favorites;
+            document.getElementById('count-archived').textContent = stats.archived;
+        }
+
+        // Render Functions
+        function renderBookmarks() {
+            const grid = document.getElementById('bookmarks-grid');
+            const emptyState = document.getElementById('empty-state');
+
+            if (bookmarks.length === 0) {
+                grid.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            grid.style.display = 'grid';
+            emptyState.style.display = 'none';
+
+            grid.innerHTML = bookmarks.map(bookmark => `
+                <div class="bookmark-card ${selectedIds.has(bookmark.id) ? 'selected' : ''}" data-id="${bookmark.id}">
+                    <div class="bookmark-checkbox">
+                        <div class="checkbox ${selectedIds.has(bookmark.id) ? 'checked' : ''}" 
+                             onclick="toggleSelect(${bookmark.id}, event)"></div>
+                    </div>
+                    ${bookmark.image_url ? `<img src="${bookmark.image_url}" class="bookmark-image" alt="">` : 
+                      `<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center;">
+                          <i class="fab fa-${bookmark.platform === 'instagram' ? 'instagram' : 'x-twitter'}" 
+                             style="font-size: 48px; color: ${bookmark.platform === 'instagram' ? 'var(--instagram)' : 'var(--twitter)'}"></i>
+                       </div>`}
+                    <div class="bookmark-content">
+                        <div class="bookmark-header">
+                            <div class="bookmark-platform ${bookmark.platform}">
+                                <i class="fab fa-${bookmark.platform === 'instagram' ? 'instagram' : 'x-twitter'}"></i>
+                                <span>${bookmark.platform === 'instagram' ? 'Instagram' : 'X'}</span>
+                            </div>
+                            <div class="bookmark-actions">
+                                <button class="bookmark-action favorite ${bookmark.is_favorite ? 'active' : ''}" 
+                                        onclick="toggleFavorite(${bookmark.id})" title="Favorilere ekle">
+                                    <i class="fas fa-star"></i>
+                                </button>
+                                <button class="bookmark-action" onclick="editBookmark(${bookmark.id})" title="Düzenle">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="bookmark-action" onclick="deleteBookmark(${bookmark.id})" title="Sil">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <a href="${bookmark.url}" target="_blank" class="bookmark-title">${bookmark.title}</a>
+                        ${bookmark.original_author ? `
+                            <div class="bookmark-author">
+                                <i class="fas fa-user"></i> ${bookmark.original_author}
+                            </div>
+                        ` : ''}
+                        ${bookmark.description ? `<p class="bookmark-description">${bookmark.description}</p>` : ''}
+                        ${bookmark.tags && bookmark.tags.length > 0 ? `
+                            <div class="bookmark-tags">
+                                ${bookmark.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
+                            </div>
+                        ` : ''}
+                        <div class="bookmark-footer">
+                            <div class="bookmark-category">
+                                ${bookmark.category ? `
+                                    <span class="category-dot" style="background: ${getCategoryColor(bookmark.category_id)}"></span>
+                                    <span>${bookmark.category}</span>
+                                ` : '<span>Kategorisiz</span>'}
+                            </div>
+                            <div class="bookmark-date">
+                                ${formatDate(bookmark.saved_at)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderCategories() {
+            const list = document.getElementById('categories-list');
+            list.innerHTML = categories.map(cat => `
+                <div class="nav-item" data-filter="category-${cat.id}">
+                    <div class="category-item">
+                        <span class="category-dot" style="background: ${cat.color}"></span>
+                        <span>${cat.name}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // Event listeners
+            document.querySelectorAll('.nav-item[data-filter^="category-"]').forEach(item => {
+                item.addEventListener('click', () => {
+                    setFilter(item.dataset.filter);
+                });
+            });
+        }
+
+        function updateCategorySelect() {
+            const select = document.getElementById('bookmark-category');
+            select.innerHTML = '<option value="">Kategori seç...</option>' +
+                categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('');
+        }
+
+        // Helper Functions
+        function getCategoryColor(categoryId) {
+            const cat = categories.find(c => c.id === categoryId);
+            return cat ? cat.color : '#95a5a6';
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('tr-TR', { 
+                day: 'numeric', 
+                month: 'short', 
+                year: 'numeric' 
+            });
+        }
+
+        // Filter Functions
+        function setFilter(filter) {
+            currentFilter = filter;
+            
+            // Update active state
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.filter === filter) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Update title
+            const titles = {
+                'all': 'Tüm Yer İşaretleri',
+                'favorites': 'Favoriler',
+                'archived': 'Arşivlenenler',
+                'instagram': 'Instagram Kaydedilenler',
+                'x': 'X Yer İşaretleri'
+            };
+            document.getElementById('page-title').textContent = 
+                titles[filter] || categories.find(c => `category-${c.id}` === filter)?.name || 'Yer İşaretleri';
+
+            selectedIds.clear();
+            updateSelectedCount();
+            fetchBookmarks();
+        }
+
+        // Selection Functions
+        function toggleSelect(id, event) {
+            event.stopPropagation();
+            if (selectedIds.has(id)) {
+                selectedIds.delete(id);
+            } else {
+                selectedIds.add(id);
+            }
+            renderBookmarks();
+            updateSelectedCount();
+        }
+
+        function toggleSelectAll() {
+            const checkbox = document.getElementById('select-all-checkbox');
+            if (selectedIds.size === bookmarks.length) {
+                selectedIds.clear();
+                checkbox.classList.remove('checked');
+            } else {
+                bookmarks.forEach(b => selectedIds.add(b.id));
+                checkbox.classList.add('checked');
+            }
+            renderBookmarks();
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selected-count').textContent = `${selectedIds.size} seçili`;
+            document.getElementById('bulk-actions').style.display = selectedIds.size > 0 ? 'flex' : 'none';
+        }
+
+        // CRUD Functions
+        async function saveBookmark() {
+            const id = document.getElementById('bookmark-id').value;
+            const data = {
+                platform: document.getElementById('bookmark-platform').value,
+                url: document.getElementById('bookmark-url').value,
+                title: document.getElementById('bookmark-title').value,
+                original_author: document.getElementById('bookmark-author').value,
+                description: document.getElementById('bookmark-description').value,
+                image_url: document.getElementById('bookmark-image').value,
+                category_id: document.getElementById('bookmark-category').value || null,
+                notes: document.getElementById('bookmark-notes').value
+            };
+
+            try {
+                if (id) {
+                    await fetch(`/api/bookmarks/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    showToast('Yer işareti güncellendi', 'success');
+                } else {
+                    await fetch('/api/bookmarks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    showToast('Yer işareti eklendi', 'success');
+                }
+                
+                closeAddModal();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Bir hata oluştu', 'error');
+            }
+        }
+
+        async function deleteBookmark(id) {
+            if (!confirm('Bu yer işaretini silmek istediğinizden emin misiniz?')) return;
+            
+            try {
+                await fetch(`/api/bookmarks/${id}`, { method: 'DELETE' });
+                showToast('Yer işareti silindi', 'success');
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Silme işlemi başarısız', 'error');
+            }
+        }
+
+        async function toggleFavorite(id) {
+            const bookmark = bookmarks.find(b => b.id === id);
+            try {
+                await fetch(`/api/bookmarks/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_favorite: !bookmark.is_favorite })
+                });
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Bir hata oluştu', 'error');
+            }
+        }
+
+        function editBookmark(id) {
+            const bookmark = bookmarks.find(b => b.id === id);
+            if (!bookmark) return;
+
+            document.getElementById('modal-title').textContent = 'Yer İşaretini Düzenle';
+            document.getElementById('bookmark-id').value = bookmark.id;
+            document.getElementById('bookmark-platform').value = bookmark.platform;
+            document.getElementById('bookmark-url').value = bookmark.url;
+            document.getElementById('bookmark-title').value = bookmark.title;
+            document.getElementById('bookmark-author').value = bookmark.original_author || '';
+            document.getElementById('bookmark-description').value = bookmark.description || '';
+            document.getElementById('bookmark-image').value = bookmark.image_url || '';
+            document.getElementById('bookmark-category').value = bookmark.category_id || '';
+            document.getElementById('bookmark-notes').value = bookmark.notes || '';
+
+            selectPlatform(bookmark.platform);
+            document.getElementById('add-modal').classList.add('active');
+        }
+
+        // Bulk Actions
+        async function bulkDelete() {
+            if (!confirm(`${selectedIds.size} yer işaretini silmek istediğinizden emin misiniz?`)) return;
+            
+            try {
+                await fetch('/api/bookmarks/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: Array.from(selectedIds) })
+                });
+                showToast(`${selectedIds.size} yer işareti silindi`, 'success');
+                selectedIds.clear();
+                updateSelectedCount();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Silme işlemi başarısız', 'error');
+            }
+        }
+
+        async function bulkArchive() {
+            try {
+                await fetch('/api/bookmarks/bulk-archive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: Array.from(selectedIds) })
+                });
+                showToast(`${selectedIds.size} yer işareti arşivlendi`, 'success');
+                selectedIds.clear();
+                updateSelectedCount();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Arşivleme başarısız', 'error');
+            }
+        }
+
+        // Import
+        async function handleImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                
+                const response = await fetch('/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                showToast(result.message, 'success');
+                closeImportModal();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('İçe aktarma başarısız. JSON formatını kontrol edin.', 'error');
+            }
+        }
+
+        // ============ INSTAGRAM VERİ İÇE AKTARMA ============
+        async function handleInstagramImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showImportProgress();
+
+            try {
+                let text = await file.text();
+                let data;
+
+                // JSON parse et
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    showImportResult('error', 'Geçersiz JSON formatı. Dosyayı kontrol edin.');
+                    return;
+                }
+
+                const response = await fetch('/api/import/instagram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showImportResult('success', `
+                        <i class="fab fa-instagram" style="font-size: 32px; color: var(--instagram); margin-bottom: 10px;"></i>
+                        <h4>${result.message}</h4>
+                        <p style="color: var(--text-secondary); margin-top: 10px;">
+                            ${result.imported} yeni kayıt eklendi
+                            ${result.skipped > 0 ? `<br>${result.skipped} kayıt zaten mevcuttu` : ''}
+                        </p>
+                    `);
+                    fetchBookmarks();
+                    fetchStats();
+                } else {
+                    showImportResult('error', `
+                        <i class="fas fa-exclamation-triangle" style="font-size: 32px; color: var(--danger); margin-bottom: 10px;"></i>
+                        <h4>İçe aktarma başarısız</h4>
+                        <p style="color: var(--text-secondary); margin-top: 10px;">${result.error || 'Bilinmeyen hata'}</p>
+                        ${result.hint ? `<p style="color: var(--warning); margin-top: 5px;">${result.hint}</p>` : ''}
+                    `);
+                }
+            } catch (error) {
+                showImportResult('error', 'Dosya işlenirken hata oluştu: ' + error.message);
+            }
+
+            // Input'u sıfırla
+            event.target.value = '';
+        }
+
+        // ============ X (TWITTER) VERİ İÇE AKTARMA ============
+        async function handleTwitterImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showImportProgress();
+
+            try {
+                let text = await file.text();
+                let data;
+
+                // Twitter bookmarks.js dosyası "window.YTD.bookmark.part0 = " ile başlar
+                if (text.includes('window.YTD.bookmark')) {
+                    // Bu kısmı kaldır
+                    text = text.replace(/^window\.YTD\.bookmark\.part\d+\s*=\s*/, '');
+                }
+
+                // JSON parse et
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    showImportResult('error', `
+                        <i class="fas fa-exclamation-triangle" style="font-size: 32px; color: var(--danger); margin-bottom: 10px;"></i>
+                        <h4>JSON parse hatası</h4>
+                        <p style="color: var(--text-secondary); margin-top: 10px;">
+                            bookmarks.js dosyasının başındaki <code>window.YTD.bookmark.part0 = </code> kısmını silip tekrar deneyin.
+                        </p>
+                    `);
+                    return;
+                }
+
+                const response = await fetch('/api/import/twitter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showImportResult('success', `
+                        <i class="fab fa-x-twitter" style="font-size: 32px; color: var(--twitter); margin-bottom: 10px;"></i>
+                        <h4>${result.message}</h4>
+                        <p style="color: var(--text-secondary); margin-top: 10px;">
+                            ${result.imported} yeni yer işareti eklendi
+                            ${result.skipped > 0 ? `<br>${result.skipped} kayıt zaten mevcuttu` : ''}
+                        </p>
+                    `);
+                    fetchBookmarks();
+                    fetchStats();
+                } else {
+                    showImportResult('error', `
+                        <i class="fas fa-exclamation-triangle" style="font-size: 32px; color: var(--danger); margin-bottom: 10px;"></i>
+                        <h4>İçe aktarma başarısız</h4>
+                        <p style="color: var(--text-secondary); margin-top: 10px;">${result.error || 'Bilinmeyen hata'}</p>
+                        ${result.hint ? `<p style="color: var(--warning); margin-top: 5px;">${result.hint}</p>` : ''}
+                    `);
+                }
+            } catch (error) {
+                showImportResult('error', 'Dosya işlenirken hata oluştu: ' + error.message);
+            }
+
+            // Input'u sıfırla
+            event.target.value = '';
+        }
+
+        // Import Tab Değiştirme
+        function switchImportTab(tab) {
+            // Tab butonlarını güncelle
+            document.querySelectorAll('.import-tab').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+
+            // İçerikleri güncelle
+            document.querySelectorAll('.import-tab-content').forEach(content => content.style.display = 'none');
+            document.getElementById('content-' + tab).style.display = 'block';
+
+            // Sonuçları gizle
+            document.getElementById('import-progress').style.display = 'none';
+            document.getElementById('import-result').style.display = 'none';
+        }
+
+        function showImportProgress() {
+            document.getElementById('import-progress').style.display = 'block';
+            document.getElementById('import-result').style.display = 'none';
+        }
+
+        function showImportResult(type, html) {
+            document.getElementById('import-progress').style.display = 'none';
+            const resultEl = document.getElementById('import-result');
+            resultEl.style.display = 'block';
+            resultEl.style.background = type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+            resultEl.style.border = `1px solid ${type === 'success' ? 'var(--success)' : 'var(--danger)'}`;
+            resultEl.innerHTML = html;
+        }
+
+        // Category Functions
+        async function saveCategory() {
+            const name = document.getElementById('category-name').value;
+            const color = document.getElementById('category-color').value;
+
+            if (!name) {
+                showToast('Kategori adı gerekli', 'error');
+                return;
+            }
+
+            try {
+                await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, color })
+                });
+                showToast('Kategori eklendi', 'success');
+                closeCategoryModal();
+                fetchCategories();
+            } catch (error) {
+                showToast('Kategori eklenemedi', 'error');
+            }
+        }
+
+        // Modal Functions
+        function openAddModal() {
+            document.getElementById('modal-title').textContent = 'Yeni Yer İşareti Ekle';
+            document.getElementById('bookmark-form').reset();
+            document.getElementById('bookmark-id').value = '';
+            selectPlatform('instagram');
+            document.getElementById('add-modal').classList.add('active');
+        }
+
+        function closeAddModal() {
+            document.getElementById('add-modal').classList.remove('active');
+        }
+
+        function openImportModal() {
+            // Reset state
+            switchImportTab('instagram');
+            document.getElementById('import-progress').style.display = 'none';
+            document.getElementById('import-result').style.display = 'none';
+            document.getElementById('import-modal').classList.add('active');
+        }
+
+        function closeImportModal() {
+            document.getElementById('import-modal').classList.remove('active');
+        }
+
+        function openCategoryModal() {
+            document.getElementById('category-name').value = '';
+            document.getElementById('category-color').value = '#3498db';
+            document.getElementById('category-modal').classList.add('active');
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('category-modal').classList.remove('active');
+        }
+
+        function selectPlatform(platform) {
+            document.getElementById('bookmark-platform').value = platform;
+            document.querySelectorAll('.platform-option').forEach(opt => {
+                opt.classList.remove('selected');
+                if (opt.classList.contains(platform)) {
+                    opt.classList.add('selected');
+                }
+            });
+        }
+
+        // ============ TOPLU URL EKLEME ============
+        function openBulkAddModal() {
+            document.getElementById('bulk-urls').value = '';
+            document.getElementById('bulk-preview').style.display = 'none';
+            updateBulkCategorySelect();
+            document.getElementById('bulk-add-modal').classList.add('active');
+        }
+
+        function closeBulkAddModal() {
+            document.getElementById('bulk-add-modal').classList.remove('active');
+        }
+
+        function updateBulkCategorySelect() {
+            const select = document.getElementById('bulk-category');
+            select.innerHTML = '<option value="">Kategori seçilmedi</option>' +
+                categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('');
+        }
+
+        // URL'leri analiz et ve önizleme göster
+        document.getElementById('bulk-urls').addEventListener('input', function() {
+            const urls = this.value.split('\n').filter(url => url.trim().length > 0);
+            const countEl = document.getElementById('bulk-count');
+            countEl.textContent = `${urls.length} URL`;
+
+            if (urls.length > 0) {
+                const previewList = document.getElementById('bulk-preview-list');
+                previewList.innerHTML = urls.slice(0, 10).map(url => {
+                    const platform = detectPlatform(url.trim());
+                    const icon = platform === 'instagram' ? 'fa-instagram' : 'fa-x-twitter';
+                    const color = platform === 'instagram' ? 'var(--instagram)' : 'var(--twitter)';
+                    return `
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--bg-dark); border-radius: 6px; margin-bottom: 5px;">
+                            <i class="fab ${icon}" style="color: ${color}; width: 20px;"></i>
+                            <span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${url.trim()}</span>
+                        </div>
+                    `;
+                }).join('');
+                
+                if (urls.length > 10) {
+                    previewList.innerHTML += `<div style="text-align: center; color: var(--text-secondary); padding: 10px;">... ve ${urls.length - 10} URL daha</div>`;
+                }
+                
+                document.getElementById('bulk-preview').style.display = 'block';
+            } else {
+                document.getElementById('bulk-preview').style.display = 'none';
+            }
+        });
+
+        function detectPlatform(url) {
+            const lower = url.toLowerCase();
+            if (lower.includes('instagram.com') || lower.includes('instagr.am')) return 'instagram';
+            if (lower.includes('twitter.com') || lower.includes('x.com') || lower.includes('t.co')) return 'x';
+            return 'unknown';
+        }
+
+        async function submitBulkAdd() {
+            const urlsText = document.getElementById('bulk-urls').value;
+            const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            const categoryId = document.getElementById('bulk-category').value || null;
+
+            if (urls.length === 0) {
+                showToast('En az bir URL girin', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/bookmarks/bulk-add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls, category_id: categoryId })
+                });
+
+                const result = await response.json();
+                showToast(result.message, 'success');
+                
+                if (result.errors && result.errors.length > 0) {
+                    result.errors.forEach(err => showToast(err, 'error'));
+                }
+
+                closeBulkAddModal();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Ekleme işlemi başarısız', 'error');
+            }
+        }
+
+        // ============ URL'DEN OTOMATİK BİLGİ ÇEKME ============
+        let fetchTimeout = null;
+        document.getElementById('bookmark-url').addEventListener('input', function() {
+            const url = this.value.trim();
+            
+            // Platform otomatik algıla
+            const platform = detectPlatform(url);
+            if (platform !== 'unknown') {
+                selectPlatform(platform);
+            }
+
+            // Debounce - 500ms bekle
+            clearTimeout(fetchTimeout);
+            if (url.startsWith('http')) {
+                fetchTimeout = setTimeout(() => fetchUrlInfo(url), 500);
+            }
+        });
+
+        async function fetchUrlInfo(url) {
+            try {
+                const response = await fetch('/api/fetch-url-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                if (response.ok) {
+                    const info = await response.json();
+                    
+                    // Sadece boş alanları doldur
+                    const titleEl = document.getElementById('bookmark-title');
+                    const authorEl = document.getElementById('bookmark-author');
+                    const descEl = document.getElementById('bookmark-description');
+                    const imgEl = document.getElementById('bookmark-image');
+
+                    if (!titleEl.value && info.title) titleEl.value = info.title;
+                    if (!authorEl.value && info.original_author) authorEl.value = info.original_author;
+                    if (!descEl.value && info.description) descEl.value = info.description;
+                    if (!imgEl.value && info.image_url) imgEl.value = info.image_url;
+
+                    if (info.platform && info.platform !== 'unknown') {
+                        selectPlatform(info.platform);
+                    }
+
+                    showToast('URL bilgileri alındı', 'success');
+                }
+            } catch (error) {
+                // Sessizce geç
+                console.log('URL bilgisi alınamadı:', error);
+            }
+        }
+
+        // ============ INSTAGRAM BOT KONTROL ============
+        let pendingRemovalIds = [];
+
+        async function openRemovalModal() {
+            await fetchInstagramAccounts();
+
+            // Sadece seçili Instagram gönderilerini say
+            const instagramIds = [];
+            const instagramUrls = [];
+            
+            for (const id of selectedIds) {
+                const bookmark = bookmarks.find(b => b.id === id);
+                if (bookmark && bookmark.platform === 'instagram') {
+                    instagramIds.push(id);
+                    instagramUrls.push(bookmark.url);
+                }
+            }
+
+            if (instagramIds.length === 0) {
+                showToast('Seçili Instagram gönderisi yok', 'error');
+                return;
+            }
+
+            pendingRemovalIds = instagramIds;
+
+            // Modal'ı güncelle
+            document.getElementById('removal-count').textContent = `${instagramIds.length} gönderi seçildi`;
+            document.getElementById('removal-number').textContent = instagramIds.length;
+
+            // URL önizleme
+            const urlsHtml = instagramUrls.slice(0, 10).map(url => `
+                <div style="padding: 8px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-secondary);">
+                    <i class="fab fa-instagram" style="color: var(--instagram); margin-right: 8px;"></i>
+                    ${url.substring(0, 50)}...
+                </div>
+            `).join('');
+            
+            document.getElementById('removal-urls').innerHTML = urlsHtml + 
+                (instagramUrls.length > 10 ? `<div style="padding: 8px; text-align: center; color: var(--text-secondary);">... ve ${instagramUrls.length - 10} tane daha</div>` : '');
+
+            // State'leri sıfırla
+            document.getElementById('removal-actions').style.display = 'block';
+            document.getElementById('removal-running').style.display = 'none';
+            document.getElementById('removal-complete').style.display = 'none';
+
+            document.getElementById('removal-modal').classList.add('active');
+        }
+
+        function closeRemovalModal() {
+            document.getElementById('removal-modal').classList.remove('active');
+        }
+
+        async function startRemovalBot() {
+            try {
+                const removalSelect = document.getElementById('removal-account-select');
+                const quickSelect = document.getElementById('quick-account-select');
+                const accountId =
+                    (removalSelect && removalSelect.value) ||
+                    (quickSelect && quickSelect.value) ||
+                    selectedInstagramAccountId;
+                if (!accountId) {
+                    showToast('Önce Instagram hesabı seçin', 'error');
+                    return;
+                }
+
+                // Önce hazırla
+                const prepResponse = await fetch('/api/bot/prepare-removal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: pendingRemovalIds })
+                });
+
+                if (!prepResponse.ok) {
+                    const error = await prepResponse.json();
+                    showToast(error.error || 'Hazırlık başarısız', 'error');
+                    return;
+                }
+
+                // Botu başlat
+                const startResponse = await fetch('/api/bot/start-removal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_id: accountId })
+                });
+
+                if (startResponse.ok) {
+                    document.getElementById('removal-actions').style.display = 'none';
+                    document.getElementById('removal-running').style.display = 'block';
+                    showToast('Bot başlatıldı! Terminal penceresini kontrol edin.', 'success');
+                } else {
+                    const error = await startResponse.json();
+                    showToast(error.error || 'Bot başlatılamadı', 'error');
+                }
+            } catch (error) {
+                showToast('Bir hata oluştu: ' + error.message, 'error');
+            }
+        }
+
+        async function archiveRemoved() {
+            try {
+                await fetch('/api/bot/mark-removed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: pendingRemovalIds, action: 'archive' })
+                });
+                showToast('Kaldırılan gönderiler arşivlendi', 'success');
+                closeRemovalModal();
+                selectedIds.clear();
+                updateSelectedCount();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Arşivleme başarısız', 'error');
+            }
+        }
+
+        async function deleteRemoved() {
+            if (!confirm('Kaldırılan gönderileri yöneticiden de silmek istediğinizden emin misiniz?')) return;
+            
+            try {
+                await fetch('/api/bot/mark-removed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: pendingRemovalIds, action: 'delete' })
+                });
+                showToast('Kaldırılan gönderiler silindi', 'success');
+                closeRemovalModal();
+                selectedIds.clear();
+                updateSelectedCount();
+                fetchBookmarks();
+                fetchStats();
+            } catch (error) {
+                showToast('Silme başarısız', 'error');
+            }
+        }
+
+        async function resetBot() {
+            try {
+                const response = await fetch('/api/bot/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    // UI'ı sıfırla
+                    document.getElementById('removal-actions').style.display = 'block';
+                    document.getElementById('removal-running').style.display = 'none';
+                    document.getElementById('removal-complete').style.display = 'none';
+                    showToast('Bot sıfırlandı. Tekrar deneyebilirsiniz.', 'success');
+                } else {
+                    showToast('Sıfırlama başarısız', 'error');
+                }
+            } catch (error) {
+                showToast('Bir hata oluştu: ' + error.message, 'error');
+            }
+        }
+
+        function manualComplete() {
+            // Kullanıcı işlemin bittiğini onaylıyor
+            document.getElementById('removal-running').style.display = 'none';
+            document.getElementById('removal-complete').style.display = 'block';
+            document.getElementById('removal-result-text').textContent = 
+                `${pendingRemovalIds.length} gönderi için işlem tamamlandı (manuel onay)`;
+            showToast('İşlem tamamlandı olarak işaretlendi', 'success');
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        // Event Listeners
+        document.querySelectorAll('.nav-item[data-filter]').forEach(item => {
+            item.addEventListener('click', () => {
+                setFilter(item.dataset.filter);
+            });
+        });
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            fetchBookmarks();
+        });
+
+        // Close modals on overlay click
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('active');
+                }
+            });
+        });
+
+        // Initialize
+        fetchCategories();
+        fetchBookmarks();
+        fetchStats();
+        fetchInstagramAccounts();
+    </script>
+</body>
+</html>

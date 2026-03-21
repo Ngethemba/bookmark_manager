@@ -9,6 +9,7 @@ import json
 import sys
 import re
 import io
+import time
 from urllib.parse import urlparse, parse_qs, unquote
 from pathlib import Path
 
@@ -485,6 +486,7 @@ class InstagramBot:
                         out.reason = 'thread_missing';
                         return out;
                     }
+                    const graphqlThreadId = String(thread.thread_id || thread.pk || '').trim();
 
                     const partnerIds = new Set((thread.users || []).map(u => String(u.pk)));
                     const items = Array.isArray(thread.items) ? thread.items : [];
@@ -581,8 +583,13 @@ class InstagramBot:
 
                         // Username bulunduysa veya link bulunduysa, aday listesine ekle
                         if (candidate || links.length) {
+                            const messageId = String(
+                                (item && (item.message_id || item.client_context)) || ''
+                            ).trim();
                             out.candidates.push({
                                 item_id: (item && (item.item_id || item.client_context)) ? String(item.item_id || item.client_context) : '',
+                                message_id: messageId,
+                                graphql_thread_id: graphqlThreadId,
                                 username: candidate ? String(candidate) : null,
                                 source_text: text,
                                 source_links: [...new Set(links)],
@@ -619,6 +626,8 @@ class InstagramBot:
             links = candidate_data.get('source_links') or []
             text = candidate_data.get('source_text') or ''
             item_id = (candidate_data.get('item_id') or '').strip()
+            message_id = (candidate_data.get('message_id') or '').strip()
+            graphql_thread_id = (candidate_data.get('graphql_thread_id') or '').strip()
             already_reacted = bool(candidate_data.get('already_reacted'))
 
             # Username bulunduysa kontrol et
@@ -640,6 +649,8 @@ class InstagramBot:
                     print(f"    {i}. @{username} ✓")
                     valid_targets.append({
                         'item_id': item_id,
+                        'message_id': message_id,
+                        'graphql_thread_id': graphql_thread_id,
                         'username': username,
                         'source_text': text,
                         'source_links': links,
@@ -656,6 +667,8 @@ class InstagramBot:
                 if resolved and resolved.lower() not in excluded_usernames:
                     valid_targets.append({
                         'item_id': item_id,
+                        'message_id': message_id,
+                        'graphql_thread_id': graphql_thread_id,
                         'username': resolved.lower(),
                         'source_text': text,
                         'source_links': links,
@@ -1069,7 +1082,7 @@ class InstagramBot:
 
         try:
             await self.page.goto(profile_url)
-            await self.random_delay(2, 4)
+            await self.random_delay(1.0, 1.8)
             await self.close_popups()
 
             already_following_selectors = [
@@ -1098,7 +1111,7 @@ class InstagramBot:
                     btn = await self.page.wait_for_selector(selector, timeout=2500)
                     if btn:
                         await btn.click()
-                        await self.random_delay(1.5, 2.5)
+                        await self.random_delay(0.8, 1.4)
                         # Tıklama sonrası durumun gerçekten değiştiğini doğrula.
                         verify_selectors = [
                             'button:has-text("Takiptesin")',
@@ -1135,9 +1148,20 @@ class InstagramBot:
             print(f"  ✗ Takip kontrol hatası: {str(e)[:70]}")
             return 'error'
 
-    async def leave_heart_on_current_thread(self, source_text='', source_links=None):
-        """Açık DM konuşmasında hedef mesaja kalp bırak."""
+    async def leave_heart_on_current_thread(self, source_text='', source_links=None, source_item_id='', source_message_id='', source_graphql_thread_id='', thread_url=''):
+        """Açık DM konuşmasında hedef mesaja kalp reaksiyonu bırak ve doğrula."""
         source_links = source_links or []
+        source_item_id = (source_item_id or '').strip()
+        source_message_id = (source_message_id or '').strip()
+        source_graphql_thread_id = (source_graphql_thread_id or '').strip()
+        thread_id = self._extract_thread_id_from_url(thread_url) if thread_url else None
+        self._last_reaction_debug = {
+            'thread_url': thread_url,
+            'source_item_id_present': bool(source_item_id),
+            'source_message_id_present': bool(source_message_id),
+            'source_graphql_thread_id_present': bool(source_graphql_thread_id),
+            'api_attempt': None
+        }
 
         def normalized_link_key(url):
             if not url:
@@ -1173,6 +1197,216 @@ class InstagramBot:
             except Exception:
                 return False
 
+        async def item_has_reaction_via_api():
+            if not thread_id or (not source_item_id and not source_message_id):
+                return False
+
+            try:
+                return await self.page.evaluate(
+                    """
+                    async ({ threadId, itemId, messageId }) => {
+                        try {
+                            const cookie = document.cookie || '';
+                            const csrfMatch = cookie.match(/(?:^|;\\s*)csrftoken=([^;]+)/i);
+                            const csrf = csrfMatch ? decodeURIComponent(csrfMatch[1]) : '';
+
+                            const resp = await fetch(`/api/v1/direct_v2/threads/${threadId}/?limit=100`, {
+                                credentials: 'include',
+                                headers: {
+                                    'x-requested-with': 'XMLHttpRequest',
+                                    'x-csrftoken': csrf,
+                                    'x-ig-app-id': '936619743392459'
+                                }
+                            });
+                            if (!resp.ok) return false;
+                            const json = await resp.json();
+                            const items = ((json || {}).thread || {}).items || [];
+                            const item = items.find(i => {
+                                const iid = String(i?.item_id || '').trim();
+                                const mid = String(i?.message_id || '').trim();
+                                const cc = String(i?.client_context || '').trim();
+                                const pk = String(i?.pk || '').trim();
+
+                                if (itemId && (itemId === iid || itemId === cc || itemId === pk)) return true;
+                                if (messageId && (messageId === mid || messageId === cc || messageId === iid)) return true;
+                                return false;
+                            });
+                            if (!item) return false;
+
+                            const reactions = item.reactions || null;
+                            const reactionCount = reactions
+                                ? ((Array.isArray(reactions.emojis) ? reactions.emojis.length : 0)
+                                    + (Array.isArray(reactions.likes) ? reactions.likes.length : 0)
+                                    + Number(reactions.count || 0)
+                                    + Number(reactions.like_count || 0))
+                                : 0;
+                            const hasViewerReaction = !!(item.has_viewer_reaction || item.viewer_reaction);
+                            return hasViewerReaction || reactionCount > 0;
+                        } catch (_) {
+                            return false;
+                        }
+                    }
+                    """,
+                    {'threadId': thread_id, 'itemId': source_item_id, 'messageId': source_message_id}
+                )
+            except Exception:
+                return False
+
+        async def send_heart_reaction_via_api():
+            if not source_message_id or not source_graphql_thread_id:
+                return {
+                    'ok': False,
+                    'reason': 'missing_message_or_graphql_thread_id',
+                    'tried': []
+                }
+
+            try:
+                result = await self.page.evaluate(
+                    """
+                    async ({ messageId, graphqlThreadId }) => {
+                        const out = { ok: false, reason: 'unknown', tried: [] };
+                        try {
+                            const cookie = document.cookie || '';
+                            const csrfMatch = cookie.match(/(?:^|;\\s*)csrftoken=([^;]+)/i);
+                            const csrf = csrfMatch ? decodeURIComponent(csrfMatch[1]) : '';
+                            const dsUserMatch = cookie.match(/(?:^|;\\s*)ds_user_id=([^;]+)/i);
+                            const dsUserId = dsUserMatch ? decodeURIComponent(dsUserMatch[1]) : '0';
+
+                            const fbDtsgEl = document.querySelector('input[name="fb_dtsg"]');
+                            const lsdEl = document.querySelector('input[name="lsd"]');
+                            const fbDtsg = fbDtsgEl ? (fbDtsgEl.value || '') : '';
+                            const lsd = lsdEl ? (lsdEl.value || '') : '';
+
+                            // jazoest hesaplama (Meta formlarında sık kullanılan kontrol alanı)
+                            let jazoest = '';
+                            if (fbDtsg) {
+                                let sum = 0;
+                                for (const ch of fbDtsg) sum += ch.charCodeAt(0);
+                                jazoest = '2' + String(sum);
+                            }
+
+                            const headers = {
+                                'x-requested-with': 'XMLHttpRequest',
+                                'x-csrftoken': csrf,
+                                'x-ig-app-id': '936619743392459',
+                                'x-fb-friendly-name': 'IGDirectReactionSendMutation',
+                                'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                            };
+
+                            const variables = JSON.stringify({
+                                input: {
+                                    emoji: '❤',
+                                    item_id: '',
+                                    message_id: messageId,
+                                    reaction_status: 'created',
+                                    thread_id: graphqlThreadId
+                                }
+                            });
+
+                            const form = new URLSearchParams();
+                            form.set('av', dsUserId || '0');
+                            form.set('__user', '0');
+                            form.set('__a', '1');
+                            form.set('__d', 'www');
+                            form.set('__comet_req', '7');
+                            form.set('fb_api_caller_class', 'RelayModern');
+                            form.set('fb_api_req_friendly_name', 'IGDirectReactionSendMutation');
+                            form.set('server_timestamps', 'true');
+                            form.set('qpl_active_flow_ids', '354954279');
+                            form.set('fb_api_analytics_tags', '["qpl_active_flow_ids=354954279"]');
+                            form.set('variables', variables);
+                            form.set('doc_id', '24374451552236906');
+                            if (fbDtsg) form.set('fb_dtsg', fbDtsg);
+                            if (lsd) form.set('lsd', lsd);
+                            if (jazoest) form.set('jazoest', jazoest);
+
+                            try {
+                                const resp = await fetch('/api/graphql', {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    headers,
+                                    body: form.toString()
+                                });
+                                let payload = null;
+                                let rawText = '';
+                                try {
+                                    rawText = await resp.text();
+                                    const cleaned = (rawText || '').replace(/^for \\(;;\\);\\s*/, '').trim();
+                                    payload = cleaned ? JSON.parse(cleaned) : null;
+                                } catch (_) {
+                                    payload = null;
+                                }
+
+                                const hasErrors = !!(payload && Array.isArray(payload.errors) && payload.errors.length > 0);
+                                const topLevelErrorCode = (payload && payload.error) ? Number(payload.error) : 0;
+                                const hasTopLevelError = !!topLevelErrorCode;
+                                const dataKeys = payload && payload.data ? Object.keys(payload.data) : [];
+                                const hasDataPayload = dataKeys.length > 0;
+
+                                out.tried.push({
+                                    url: '/api/graphql',
+                                    status: resp.status,
+                                    hasErrors,
+                                    hasTopLevelError,
+                                    topLevelErrorCode,
+                                    dataKeys,
+                                    hasDataPayload,
+                                    errorCount: payload && Array.isArray(payload.errors) ? payload.errors.length : 0,
+                                    firstError: (payload && Array.isArray(payload.errors) && payload.errors[0])
+                                        ? String(payload.errors[0].message || 'unknown_error')
+                                        : '',
+                                    errorSummary: (payload && payload.errorSummary) ? String(payload.errorSummary) : '',
+                                    rawPreview: (rawText || '').slice(0, 180)
+                                });
+
+                                if (resp.ok && !hasErrors && !hasTopLevelError && hasDataPayload) {
+                                    out.ok = true;
+                                    out.reason = 'ok';
+                                } else if (!resp.ok) {
+                                    out.reason = `http_${resp.status}`;
+                                } else if (hasTopLevelError) {
+                                    out.reason = topLevelErrorCode === 1357001
+                                        ? 'auth_login_required'
+                                        : `graphql_top_level_error_${topLevelErrorCode}`;
+                                } else if (hasErrors) {
+                                    out.reason = 'graphql_errors';
+                                } else if (!payload) {
+                                    out.reason = 'invalid_or_empty_json_payload';
+                                } else if (!hasDataPayload) {
+                                    out.reason = 'graphql_data_empty';
+                                } else {
+                                    out.reason = 'no_ok_without_errors';
+                                }
+                            } catch (_) {
+                                out.tried.push({ url: '/api/graphql', status: -1 });
+                                out.reason = 'fetch_exception';
+                            }
+
+                            return out;
+                        } catch (_) {
+                            out.reason = 'evaluate_exception';
+                            return out;
+                        }
+                    }
+                    """,
+                    {'messageId': source_message_id, 'graphqlThreadId': source_graphql_thread_id}
+                )
+
+                await self.random_delay(0.5, 0.9)
+                if isinstance(result, dict):
+                    return result
+                return {
+                    'ok': False,
+                    'reason': 'invalid_api_result_type',
+                    'tried': []
+                }
+            except Exception:
+                return {
+                    'ok': False,
+                    'reason': 'python_exception',
+                    'tried': []
+                }
+
         async def click_heart_via_reaction_menu(row):
             try:
                 await row.hover()
@@ -1180,6 +1414,9 @@ class InstagramBot:
                 pass
 
             open_menu_selectors = [
+                'button[aria-label*="Add reaction"]',
+                'button[aria-label*="Reaction"]',
+                'button[aria-label*="Tepki"]',
                 '[aria-label*="React"]',
                 '[aria-label*="Tepki"]',
                 '[aria-label*="reaction"]',
@@ -1188,21 +1425,31 @@ class InstagramBot:
                 'div[role="button"][aria-label*="Tepki"]'
             ]
 
+            opened = False
             for selector in open_menu_selectors:
                 try:
                     btn = await row.query_selector(selector)
+                    if not btn:
+                        btn = await self.page.query_selector(selector)
                     if btn:
                         await btn.click(timeout=1500)
                         await self.random_delay(0.5, 0.9)
+                        opened = True
                         break
                 except Exception:
                     continue
 
+            if not opened:
+                return False
+
             heart_selectors = [
                 '[aria-label="❤️"]',
+                '[aria-label*="red heart"]',
                 '[aria-label*="Heart"]',
                 '[aria-label*="Kalp"]',
-                '[aria-label*="love"]'
+                '[aria-label*="love"]',
+                'button:has-text("❤️")',
+                'div[role="button"]:has-text("❤️")'
             ]
             for selector in heart_selectors:
                 try:
@@ -1216,49 +1463,145 @@ class InstagramBot:
 
             return False
 
-        # Önce hedef mesaj satırını bularak reaksiyon dene.
+        # Önce hedef mesajı link/text üzerinden bulup reaksiyon dene.
         try:
-            rows = await self.page.query_selector_all('div[role="row"]')
+            async def resolve_row_handle(el):
+                try:
+                    row_handle = await el.evaluate_handle(
+                        """
+                        (node) => node.closest('div[role="row"], [role="listitem"], li') || node
+                        """
+                    )
+                    row_el = row_handle.as_element()
+                    return row_el or el
+                except Exception:
+                    return el
+
+            targets = []
             source_link_keys = {normalized_link_key(link) for link in source_links if normalized_link_key(link)}
 
-            for row in reversed(rows):
-                row_text = (await row.inner_text()).strip()
-                row_links = await row.evaluate("""
-                    (el) => [...el.querySelectorAll('a[href]')]
-                        .map(a => a.href)
-                        .filter(Boolean)
-                """)
-                row_link_keys = {normalized_link_key(link) for link in (row_links or []) if normalized_link_key(link)}
+            # 1) Link bazlı doğrudan hedef tespiti
+            if source_link_keys:
+                anchors = await self.page.query_selector_all('a[href]')
+                for anchor in reversed(anchors):
+                    href = ''
+                    try:
+                        href = await anchor.evaluate("el => el.href || el.getAttribute('href') || ''")
+                    except Exception:
+                        continue
 
-                text_match = bool(source_text and row_text and source_text[:80] in row_text)
-                link_match = bool(source_link_keys and (source_link_keys & row_link_keys))
+                    if normalized_link_key(href) in source_link_keys:
+                        row = await resolve_row_handle(anchor)
+                        targets.append((row, anchor))
 
-                if text_match or link_match:
-                    had_reaction_before = await row_has_heart_reaction(row)
-                    if had_reaction_before:
-                        print("  ✓ Hedef mesajda zaten kalp reaksiyonu var")
-                        return True
+            # 2) Metin bazlı hedef tespiti
+            if source_text:
+                msg_nodes = await self.page.query_selector_all('span[dir="auto"], div[dir="auto"]')
+                for node in reversed(msg_nodes):
+                    try:
+                        text = (await node.inner_text()).strip()
+                    except Exception:
+                        continue
 
-                    reaction_verified = False
-                    for _ in range(2):
-                        await row.dblclick(timeout=2500)
-                        await self.random_delay(0.8, 1.2)
-                        if await row_has_heart_reaction(row):
-                            reaction_verified = True
+                    if text and source_text[:80] in text:
+                        row = await resolve_row_handle(node)
+                        targets.append((row, node))
+
+            # 3) Son çare: link içeren son mesaj satırı
+            if not targets:
+                rows = await self.page.query_selector_all('div[role="row"], [role="listitem"], li')
+                for row in reversed(rows):
+                    try:
+                        has_instagram_link = await row.evaluate(
+                            """
+                            (el) => [...el.querySelectorAll('a[href]')]
+                                .some(a => (a.href || '').includes('instagram.com'))
+                            """
+                        )
+                        if has_instagram_link:
+                            targets.append((row, row))
+                            break
+                    except Exception:
+                        continue
+
+            # 4) Link de bulunamazsa son dolu mesaj satırını dene.
+            if not targets:
+                rows = await self.page.query_selector_all('div[role="row"], [role="listitem"], li')
+                for row in reversed(rows):
+                    try:
+                        row_text = (await row.inner_text()).strip()
+                        if row_text and len(row_text) >= 2:
+                            targets.append((row, row))
+                            break
+                    except Exception:
+                        continue
+
+            seen_rows = set()
+            attempted_rows = 0
+            for row, action_target in targets:
+                try:
+                    row_key = await row.evaluate("el => (el.innerText || '').slice(0, 120)")
+                except Exception:
+                    row_key = str(id(row))
+                if row_key in seen_rows:
+                    continue
+                seen_rows.add(row_key)
+                attempted_rows += 1
+
+                had_reaction_before = await row_has_heart_reaction(row)
+                if had_reaction_before or await item_has_reaction_via_api():
+                    print("  ✓ Hedef mesajda zaten kalp reaksiyonu var")
+                    return True
+
+                # Öncelik: API ile doğrudan reaksiyon bırakmayı dene.
+                api_send_result = await send_heart_reaction_via_api()
+                self._last_reaction_debug['api_attempt'] = api_send_result
+
+                if api_send_result.get('ok'):
+                    verified_after_send = False
+                    for _ in range(3):
+                        await self.random_delay(0.5, 0.9)
+                        if await item_has_reaction_via_api() or await row_has_heart_reaction(row):
+                            verified_after_send = True
                             break
 
-                    if reaction_verified:
-                        print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (doğrulandı)")
+                    if verified_after_send:
+                        print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (API + doğrulama)")
                         return True
 
-                    # Çift tık başarısızsa reaction menüsünden kalp dene.
-                    menu_clicked = await click_heart_via_reaction_menu(row)
-                    if menu_clicked and await row_has_heart_reaction(row):
-                        print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (menü + doğrulama)")
-                        return True
+                    print("  ⚠ API reaction gönderildi ancak doğrulanamadı")
+                else:
+                    print(f"  ⚠ API reaction gönderimi başarısız: {api_send_result.get('reason', 'unknown')}")
 
-                    print("  ⚠ Hedef mesaj bulundu ancak reaksiyon doğrulanamadı")
-                    return False
+                reaction_verified = False
+                interactive_target = action_target or row
+
+                for _ in range(2):
+                    try:
+                        await interactive_target.hover()
+                    except Exception:
+                        pass
+                    await interactive_target.dblclick(timeout=2500)
+                    await self.random_delay(0.8, 1.2)
+                    if await row_has_heart_reaction(row) or await item_has_reaction_via_api():
+                        reaction_verified = True
+                        break
+
+                if reaction_verified:
+                    print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (doğrulandı)")
+                    return True
+
+                # Çift tık başarısızsa reaction menüsünden kalp dene.
+                menu_clicked = await click_heart_via_reaction_menu(row)
+                if menu_clicked and (await row_has_heart_reaction(row) or await item_has_reaction_via_api()):
+                    print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (menü + doğrulama)")
+                    return True
+
+                print("  ⚠ Bu aday mesajda reaksiyon doğrulanamadı, sonraki aday deneniyor")
+
+            if attempted_rows > 0:
+                print(f"  ⚠ {attempted_rows} aday mesaj denendi ancak reaksiyon doğrulanamadı")
+                return False
         except Exception:
             pass
 
@@ -1291,6 +1634,7 @@ class InstagramBot:
             thread_url = f'https://www.instagram.com{thread_href}' if thread_href.startswith('/') else thread_href
             print(f"\n[{i}/{len(thread_links)}] Konuşma işleniyor...")
             results['processed'] += 1
+            follow_status_cache = {}
 
             try:
                 await self.page.goto(thread_url)
@@ -1360,6 +1704,53 @@ class InstagramBot:
                         continue
                     pending_targets.append(target)
 
+                # Sadece konuşmada görünür/somut eşleşmesi olan hedefleri işle.
+                visible_candidates = await self.get_recent_message_candidates(limit=80)
+
+                def norm_link_key(url):
+                    normalized = self._normalize_shared_instagram_link(url) or (url or '')
+                    return normalized.strip().rstrip('/').lower()
+
+                visible_link_keys = set()
+                visible_texts = []
+                for candidate in (visible_candidates or []):
+                    c_text = (candidate.get('text') or '').strip()
+                    if c_text:
+                        visible_texts.append(c_text)
+                    for c_link in (candidate.get('links') or []):
+                        key = norm_link_key(c_link)
+                        if key:
+                            visible_link_keys.add(key)
+
+                if not visible_link_keys and not visible_texts:
+                    filtered_targets = pending_targets
+                else:
+                    filtered_targets = []
+                    for target in pending_targets:
+                        t_text = (target.get('source_text') or '').strip()
+                        t_links = target.get('source_links') or []
+                        t_link_keys = {norm_link_key(link) for link in t_links if norm_link_key(link)}
+
+                        link_visible = bool(t_link_keys and (t_link_keys & visible_link_keys))
+                        text_visible = False
+                        if t_text:
+                            head = t_text[:70]
+                            text_visible = any(head and head in v_text for v_text in visible_texts)
+
+                        if link_visible or text_visible:
+                            filtered_targets.append(target)
+                        else:
+                            results['skipped'] += 1
+                            results['details'].append({
+                                'thread': thread_url,
+                                'username': (target or {}).get('username'),
+                                'status': 'skipped_target_not_visible',
+                                'follow_status': None,
+                                'hearted': False
+                            })
+
+                pending_targets = filtered_targets
+
                 if not pending_targets:
                     print("  ✓ Bu konuşmada tepkisiz/emojisiz uygun paylaşım kalmadı")
                     await self.random_delay(0.8, 1.3)
@@ -1369,6 +1760,16 @@ class InstagramBot:
                     username = (target or {}).get('username')
                     source_text = (target or {}).get('source_text', '')
                     source_links = (target or {}).get('source_links', [])
+                    source_item_id = (target or {}).get('item_id', '')
+                    source_message_id = (target or {}).get('message_id', '')
+                    source_graphql_thread_id = (target or {}).get('graphql_thread_id', '')
+
+                    print(
+                        "  [REACTION DEBUG] "
+                        f"item_id={'set' if source_item_id else 'empty'}, "
+                        f"message_id={'set' if source_message_id else 'empty'}, "
+                        f"graphql_thread_id={'set' if source_graphql_thread_id else 'empty'}"
+                    )
 
                     if not username:
                         results['skipped'] += 1
@@ -1381,11 +1782,18 @@ class InstagramBot:
                         })
                         continue
 
-                    follow_status = await self.ensure_following(username)
-                    if follow_status in ('follow_attempted', 'unknown', 'error'):
-                        print("  ↺ Takip durumu net değil, tepkisiz mesaj için 1 kez daha deneniyor...")
-                        await self.random_delay(1.2, 2.0)
+                    if username in follow_status_cache:
+                        follow_status = follow_status_cache[username]
+                        print(f"  ↺ Takip durumu cache kullanıldı: @{username} -> {follow_status}")
+                    else:
                         follow_status = await self.ensure_following(username)
+
+                    if follow_status in ('unknown', 'error'):
+                        print("  ↺ Takip durumu net değil, tepkisiz mesaj için 1 kez daha deneniyor...")
+                        await self.random_delay(0.5, 1.0)
+                        follow_status = await self.ensure_following(username)
+
+                    follow_status_cache[username] = follow_status
 
                     if follow_status == 'followed':
                         results['followed'] += 1
@@ -1398,10 +1806,14 @@ class InstagramBot:
                     if follow_status in ('followed', 'already_following'):
                         # Profilden geri dönüp aynı konuşmada kalp bırak
                         await self.page.goto(thread_url)
-                        await self.random_delay(1.5, 2.5)
+                        await self.random_delay(0.7, 1.2)
                         hearted = await self.leave_heart_on_current_thread(
                             source_text=source_text,
-                            source_links=source_links
+                            source_links=source_links,
+                            source_item_id=source_item_id,
+                            source_message_id=source_message_id,
+                            source_graphql_thread_id=source_graphql_thread_id,
+                            thread_url=thread_url
                         )
                         if hearted:
                             results['hearted'] += 1
@@ -1412,7 +1824,13 @@ class InstagramBot:
                         'thread': thread_url,
                         'username': username,
                         'follow_status': follow_status,
-                        'hearted': hearted
+                        'hearted': hearted,
+                        'reaction_debug': {
+                            'item_id_present': bool(source_item_id),
+                            'message_id_present': bool(source_message_id),
+                            'graphql_thread_id_present': bool(source_graphql_thread_id),
+                            'api_attempt': (getattr(self, '_last_reaction_debug', {}) or {}).get('api_attempt')
+                        }
                     })
             except Exception as e:
                 print(f"  ✗ Konuşma işlenemedi: {str(e)[:70]}")
@@ -1552,6 +1970,130 @@ class InstagramBot:
             'failed_urls': self.failed_urls
         }
 
+    async def capture_reaction_signature(self, max_threads=1, wait_seconds=240):
+        """DM reaction request'ini manuel aksiyondan yakala ve dosyaya yaz."""
+        print(f"\n{'='*50}")
+        print("REACTION CAPTURE MODU")
+        print(f"{'='*50}")
+
+        thread_links = await self.get_recent_thread_links(max_threads=max_threads)
+        if not thread_links:
+            print("⚠ Capture için konuşma bulunamadı.")
+            return {'captured': 0, 'requests': []}
+
+        thread_href = thread_links[0]
+        thread_url = f'https://www.instagram.com{thread_href}' if thread_href.startswith('/') else thread_href
+        await self.page.goto(thread_url)
+        await self.random_delay(2, 3)
+
+        print("\n1) Açık konuşmada herhangi bir paylaşıma elle reaction (kalp) bırak")
+        print("2) Reaction bıraktıktan sonra terminale dönüp ENTER'a bas")
+        print(f"3) Otomatik dinleme aktif (max {wait_seconds} sn)")
+
+        captured_all = []
+
+        def is_candidate_reaction(url, method, post_data):
+            if method.upper() != 'POST':
+                return False
+            url_l = (url or '').lower()
+            body_l = (post_data or '').lower()
+
+            if 'instagram.com' not in url_l:
+                return False
+
+            # direct / graphql / xdt_api kanallarında reaction benzeri tokenları yakala.
+            channel_tokens = ('direct', 'direct_v2', 'graphql', 'xdt_api')
+            if not any(tok in url_l or tok in body_l for tok in channel_tokens):
+                return False
+
+            reaction_tokens = ('reaction', 'reactions', 'send_item', 'emoji', 'like', 'heart')
+            return any(tok in url_l or tok in body_l for tok in reaction_tokens)
+
+        def on_request(req):
+            try:
+                post_data = req.post_data or ''
+                url_l = (req.url or '').lower()
+
+                # Çok fazla log büyümesini önlemek için yalnızca Instagram POST isteklerini topla.
+                if req.method.upper() != 'POST' or 'instagram.com' not in url_l:
+                    return
+
+                item = {
+                    'ts': int(time.time()),
+                    'method': req.method,
+                    'url': req.url,
+                    'post_data': post_data,
+                    'headers': {
+                        'x-csrftoken': req.headers.get('x-csrftoken', ''),
+                        'x-ig-app-id': req.headers.get('x-ig-app-id', ''),
+                        'content-type': req.headers.get('content-type', ''),
+                    }
+                }
+
+                captured_all.append(item)
+                if len(captured_all) > 500:
+                    del captured_all[0:len(captured_all)-500]
+
+                if is_candidate_reaction(req.url, req.method, post_data):
+                    print(f"[CAPTURE:CANDIDATE] {req.method} {req.url}")
+                else:
+                    print(f"[CAPTURE:POST] {req.method} {req.url}")
+            except Exception:
+                pass
+
+        self.context.on('request', on_request)
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(input, "\n[Reaction bıraktıktan sonra ENTER] > "),
+                timeout=wait_seconds
+            )
+            # ENTER sonrası in-flight isteklerin düşmesi için kısa bekleme.
+            await self.random_delay(2.0, 3.0)
+        except asyncio.TimeoutError:
+            print("⚠ Capture timeout: Süre doldu.")
+        finally:
+            try:
+                self.context.remove_listener('request', on_request)
+            except Exception:
+                pass
+
+        dedup = []
+        seen = set()
+        for item in captured_all:
+            key = f"{item.get('method')}|{item.get('url')}|{item.get('post_data')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            dedup.append(item)
+
+        reaction_candidates = [
+            item for item in dedup
+            if is_candidate_reaction(item.get('url', ''), item.get('method', ''), item.get('post_data', ''))
+        ]
+
+        # Son 20 POST isteği debug için sakla.
+        tail_posts = dedup[-20:]
+
+        result = {
+            'captured': len(reaction_candidates),
+            'captured_all_posts': len(dedup),
+            'thread_url': thread_url,
+            'requests': reaction_candidates,
+            'post_tail': tail_posts
+        }
+
+        with open('reaction_capture.json', 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+
+        if reaction_candidates:
+            print(f"\n✓ Capture başarılı: {len(reaction_candidates)} reaction-aday request bulundu")
+            print("Sonuç dosyası: reaction_capture.json")
+        else:
+            print("\n⚠ Reaction-aday request yakalanamadı")
+            print(f"Ama {len(dedup)} adet Instagram POST yakalandı, reaction_capture.json içinde post_tail bölümünü kontrol edeceğim.")
+
+        return result
+
 
 async def main(urls_file=None, urls_list=None, auto_confirm=False, profile_name='default'):
     """Ana fonksiyon"""
@@ -1633,6 +2175,23 @@ async def main_dm_follow(max_threads=10, profile_name='default'):
         await bot.close()
 
 
+async def main_capture_reaction(max_threads=1, profile_name='default'):
+    """DM reaction network isteğini yakalamak için manuel capture modu."""
+    bot = InstagramBot(headless=False, profile_name=profile_name)
+
+    try:
+        await bot.start()
+
+        if not await bot.login():
+            print("Giriş başarısız. Program sonlandırılıyor.")
+            return
+
+        result = await bot.capture_reaction_signature(max_threads=max_threads)
+        print(f"Capture sonucu: {result.get('captured', 0)} request")
+    finally:
+        await bot.close()
+
+
 def run_dm_follower(max_threads=10, profile_name='default'):
     """Senkron wrapper - DM takip/kalp akışı"""
     return asyncio.run(main_dm_follow(max_threads=max_threads, profile_name=profile_name))
@@ -1660,6 +2219,25 @@ def parse_cli_args(args):
                 cursor += 1
             except ValueError:
                 print("Geçersiz konuşma limiti, varsayılan 10 kullanılacak.")
+        while cursor < len(args):
+            token = args[cursor]
+            if token == '--profile' and cursor + 1 < len(args):
+                parsed['profile_name'] = args[cursor + 1]
+                cursor += 2
+            else:
+                cursor += 1
+        return parsed
+
+    if args[0] == '--capture-reaction':
+        parsed['mode'] = 'capture_reaction'
+        parsed['max_threads'] = 1
+        cursor = 1
+        if cursor < len(args) and not args[cursor].startswith('--'):
+            try:
+                parsed['max_threads'] = int(args[cursor])
+                cursor += 1
+            except ValueError:
+                print("Geçersiz konuşma limiti, varsayılan 1 kullanılacak.")
         while cursor < len(args):
             token = args[cursor]
             if token == '--profile' and cursor + 1 < len(args):
@@ -1702,6 +2280,11 @@ if __name__ == '__main__':
                 max_threads=parsed['max_threads'],
                 profile_name=parsed['profile_name']
             ))
+        elif parsed['mode'] == 'capture_reaction':
+            asyncio.run(main_capture_reaction(
+                max_threads=parsed['max_threads'],
+                profile_name=parsed['profile_name']
+            ))
         elif parsed['mode'] == 'setup_account':
             setup_bot = InstagramBot(headless=False, profile_name=parsed['profile_name'])
             try:
@@ -1726,6 +2309,7 @@ if __name__ == '__main__':
             print("  python instagram_bot.py urls.json --profile default")
             print("  python instagram_bot.py urls.json --profile deneme --yes")
             print("  python instagram_bot.py --scan-dm 10 --profile deneme")
+            print("  python instagram_bot.py --capture-reaction 1 --profile deneme")
             print("  python instagram_bot.py --setup-account deneme")
             print("\nveya Python'dan:")
             print("  from instagram_bot import run_removal")

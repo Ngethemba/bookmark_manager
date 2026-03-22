@@ -172,15 +172,48 @@ class InstagramBot:
             waited += check_interval
 
         return False
+
+    async def _has_active_instagram_session(self):
+        """Aktif Instagram oturumu var mı hızlıca kontrol et."""
+        try:
+            await self.page.goto('https://www.instagram.com/', wait_until='domcontentloaded')
+            await self.random_delay(0.8, 1.4)
+
+            current_url = (self.page.url or '').lower()
+            if 'accounts/login' in current_url or '/challenge/' in current_url:
+                return False
+
+            nav = await self.page.query_selector('nav, [role="navigation"]')
+            if nav:
+                return True
+
+            # URL login/challenge değilse ve page boş değilse çoğu durumda oturum vardır.
+            content = await self.page.content()
+            return bool(content and len(content) > 1200 and 'login' not in current_url)
+        except Exception:
+            return False
     
     async def login(self):
         """Instagram'a giriş yap (manuel)"""
         print("\n" + "="*50)
         print("INSTAGRAM GİRİŞİ")
         print("="*50)
+
+        if await self._has_active_instagram_session():
+            self.is_logged_in = True
+            print("✓ Oturum zaten açık, manuel giriş adımı atlandı")
+            await self.close_popups()
+            return True
         
         await self.page.goto('https://www.instagram.com/accounts/login/')
         await self.random_delay(3, 5)
+
+        # Login URL'sine gitsek bile Instagram bazen aktif oturumu direkt anasayfaya taşır.
+        if await self._has_active_instagram_session():
+            self.is_logged_in = True
+            print("✓ Oturum aktif algılandı, ENTER beklenmeden devam ediliyor")
+            await self.close_popups()
+            return True
         
         # Çerez popup'ını kapat (varsa)
         try:
@@ -1111,7 +1144,7 @@ class InstagramBot:
                     btn = await self.page.wait_for_selector(selector, timeout=2500)
                     if btn:
                         await btn.click()
-                        await self.random_delay(0.8, 1.4)
+                        await self.random_delay(1.5, 2.4)
                         # Tıklama sonrası durumun gerçekten değiştiğini doğrula.
                         verify_selectors = [
                             'button:has-text("Takiptesin")',
@@ -1132,6 +1165,18 @@ class InstagramBot:
                             except Exception:
                                 pass
 
+                        if not verified:
+                            # Durum metni bazen geç güncelleniyor; kısa bir ek pencere daha ver.
+                            await self.random_delay(1.2, 1.8)
+                            for v_selector in verify_selectors:
+                                try:
+                                    v_btn = await self.page.wait_for_selector(v_selector, timeout=900)
+                                    if v_btn:
+                                        verified = True
+                                        break
+                                except Exception:
+                                    pass
+
                         if verified:
                             print("  ✓ Hesap takip edildi")
                             return 'followed'
@@ -1148,9 +1193,10 @@ class InstagramBot:
             print(f"  ✗ Takip kontrol hatası: {str(e)[:70]}")
             return 'error'
 
-    async def leave_heart_on_current_thread(self, source_text='', source_links=None, source_item_id='', source_message_id='', source_graphql_thread_id='', thread_url=''):
+    async def leave_heart_on_current_thread(self, source_text='', source_links=None, source_item_id='', source_message_id='', source_graphql_thread_id='', thread_url='', source_username=''):
         """Açık DM konuşmasında hedef mesaja kalp reaksiyonu bırak ve doğrula."""
         source_links = source_links or []
+        source_username = (source_username or '').strip().lower().lstrip('@')
         source_item_id = (source_item_id or '').strip()
         source_message_id = (source_message_id or '').strip()
         source_graphql_thread_id = (source_graphql_thread_id or '').strip()
@@ -1160,8 +1206,19 @@ class InstagramBot:
             'source_item_id_present': bool(source_item_id),
             'source_message_id_present': bool(source_message_id),
             'source_graphql_thread_id_present': bool(source_graphql_thread_id),
+            'ui_probe': [],
+            'target_count': 0,
+            'target_select_stage': '',
+            'ui_path_error': '',
             'api_attempt': None
         }
+        use_api_reaction = False
+        if not use_api_reaction:
+            self._last_reaction_debug['api_attempt'] = {
+                'ok': False,
+                'reason': 'ui_only_mode_api_disabled',
+                'tried': []
+            }
 
         def normalized_link_key(url):
             if not url:
@@ -1463,6 +1520,64 @@ class InstagramBot:
 
             return False
 
+        async def resolve_reaction_surface(row):
+            """Satır içinde reaksiyon bırakmaya en uygun hedef elementi bul."""
+            try:
+                handle = await row.evaluate_handle(
+                    """
+                    (el) => {
+                        const preferred = [
+                            'div[role="button"]',
+                            'a[href*="instagram.com"]',
+                            'span[dir="auto"]',
+                            'div[dir="auto"]'
+                        ];
+                        for (const sel of preferred) {
+                            const node = el.querySelector(sel);
+                            if (node) return node;
+                        }
+                        return el;
+                    }
+                    """
+                )
+                as_el = handle.as_element()
+                return as_el or row
+            except Exception:
+                return row
+
+        async def capture_ui_probe(row, stage='attempt'):
+            """Hedef satırdaki reaksiyonla ilgili UI sinyallerini topla."""
+            try:
+                probe = await row.evaluate(
+                    """
+                    (el) => {
+                        const getCount = (sel) => el.querySelectorAll(sel).length;
+                        const text = (el.innerText || '').trim().slice(0, 160);
+                        const reactionBtnCount = getCount('button[aria-label*="reaction" i], [aria-label*="tepki" i], [aria-label*="react" i]');
+                        const heartCount = getCount('[aria-label*="heart" i], [aria-label*="kalp" i], [aria-label="❤️"], [aria-label="❤"]');
+                        const linkCount = getCount('a[href*="instagram.com"]');
+                        const buttonCount = getCount('button, div[role="button"]');
+                        return {
+                            stage,
+                            textPreview: text,
+                            reactionBtnCount,
+                            heartCount,
+                            linkCount,
+                            buttonCount,
+                            hasRoleRow: (el.getAttribute('role') || '').toLowerCase() === 'row'
+                        };
+                    }
+                    """,
+                    stage
+                )
+            except Exception:
+                probe = {'stage': stage, 'error': 'probe_exception'}
+
+            ui_probe = self._last_reaction_debug.setdefault('ui_probe', [])
+            ui_probe.append(probe)
+            if len(ui_probe) > 20:
+                del ui_probe[0:len(ui_probe) - 20]
+
         # Önce hedef mesajı link/text üzerinden bulup reaksiyon dene.
         try:
             async def resolve_row_handle(el):
@@ -1480,38 +1595,77 @@ class InstagramBot:
             targets = []
             source_link_keys = {normalized_link_key(link) for link in source_links if normalized_link_key(link)}
 
-            # 1) Link bazlı doğrudan hedef tespiti
-            if source_link_keys:
-                anchors = await self.page.query_selector_all('a[href]')
-                for anchor in reversed(anchors):
-                    href = ''
-                    try:
-                        href = await anchor.evaluate("el => el.href || el.getAttribute('href') || ''")
-                    except Exception:
-                        continue
+            async def collect_targets_once():
+                found = []
 
-                    if normalized_link_key(href) in source_link_keys:
-                        row = await resolve_row_handle(anchor)
-                        targets.append((row, anchor))
+                if source_link_keys:
+                    anchors = await self.page.query_selector_all('a[href]')
+                    for anchor in reversed(anchors):
+                        href = ''
+                        try:
+                            href = await anchor.evaluate("el => el.href || el.getAttribute('href') || ''")
+                        except Exception:
+                            continue
 
-            # 2) Metin bazlı hedef tespiti
-            if source_text:
-                msg_nodes = await self.page.query_selector_all('span[dir="auto"], div[dir="auto"]')
-                for node in reversed(msg_nodes):
-                    try:
-                        text = (await node.inner_text()).strip()
-                    except Exception:
-                        continue
+                        if normalized_link_key(href) in source_link_keys:
+                            row = await resolve_row_handle(anchor)
+                            found.append((row, row))
 
-                    if text and source_text[:80] in text:
-                        row = await resolve_row_handle(node)
-                        targets.append((row, node))
+                if source_text:
+                    msg_nodes = await self.page.query_selector_all('span[dir="auto"], div[dir="auto"]')
+                    for node in reversed(msg_nodes):
+                        try:
+                            text = (await node.inner_text()).strip()
+                        except Exception:
+                            continue
 
-            # 3) Son çare: link içeren son mesaj satırı
+                        if text and source_text[:80] in text:
+                            row = await resolve_row_handle(node)
+                            found.append((row, row))
+
+                if source_username:
+                    rows = await self.page.query_selector_all('div[role="row"], [role="listitem"], li')
+                    for row in reversed(rows):
+                        try:
+                            is_match = await row.evaluate(
+                                """
+                                (el, username) => {
+                                    const t = (el.innerText || '').toLowerCase();
+                                    if (t.includes(`@${username}`) || t.includes(username)) return true;
+                                    const hrefs = [...el.querySelectorAll('a[href]')]
+                                        .map(a => (a.href || '').toLowerCase());
+                                    return hrefs.some(h => h.includes(`/` + username + `/`) || h.endsWith('/' + username));
+                                }
+                                """,
+                                source_username
+                            )
+                            if is_match:
+                                found.append((row, row))
+                        except Exception:
+                            continue
+
+                return found
+
+            targets = await collect_targets_once()
+            self._last_reaction_debug['target_select_stage'] = 'initial_collect'
+
+            # Eşleşme yoksa konuşma içinde biraz yukarı kaydırıp tekrar ara.
             if not targets:
-                rows = await self.page.query_selector_all('div[role="row"], [role="listitem"], li')
-                for row in reversed(rows):
+                for _ in range(6):
                     try:
+                        await self.page.mouse.wheel(0, -1200)
+                        await self.random_delay(0.25, 0.45)
+                    except Exception:
+                        pass
+                    targets = await collect_targets_once()
+                    if targets:
+                        self._last_reaction_debug['target_select_stage'] = 'after_scroll_collect'
+                        break
+
+            if not targets:
+                try:
+                    rows = await self.page.query_selector_all('div[role="row"], [role="listitem"], li')
+                    for row in reversed(rows):
                         has_instagram_link = await row.evaluate(
                             """
                             (el) => [...el.querySelectorAll('a[href]')]
@@ -1519,22 +1673,14 @@ class InstagramBot:
                             """
                         )
                         if has_instagram_link:
+                            print("  ⚠ Hedef satır bulunamadı, son Instagram linkli satır fallback denenecek")
                             targets.append((row, row))
+                            self._last_reaction_debug['target_select_stage'] = 'fallback_last_instagram_link_row'
                             break
-                    except Exception:
-                        continue
+                except Exception:
+                    pass
 
-            # 4) Link de bulunamazsa son dolu mesaj satırını dene.
-            if not targets:
-                rows = await self.page.query_selector_all('div[role="row"], [role="listitem"], li')
-                for row in reversed(rows):
-                    try:
-                        row_text = (await row.inner_text()).strip()
-                        if row_text and len(row_text) >= 2:
-                            targets.append((row, row))
-                            break
-                    except Exception:
-                        continue
+            self._last_reaction_debug['target_count'] = len(targets)
 
             seen_rows = set()
             attempted_rows = 0
@@ -1547,38 +1693,25 @@ class InstagramBot:
                     continue
                 seen_rows.add(row_key)
                 attempted_rows += 1
+                await capture_ui_probe(row, stage='target_selected')
 
                 had_reaction_before = await row_has_heart_reaction(row)
                 if had_reaction_before or await item_has_reaction_via_api():
                     print("  ✓ Hedef mesajda zaten kalp reaksiyonu var")
                     return True
 
-                # Öncelik: API ile doğrudan reaksiyon bırakmayı dene.
-                api_send_result = await send_heart_reaction_via_api()
-                self._last_reaction_debug['api_attempt'] = api_send_result
-
-                if api_send_result.get('ok'):
-                    verified_after_send = False
-                    for _ in range(3):
-                        await self.random_delay(0.5, 0.9)
-                        if await item_has_reaction_via_api() or await row_has_heart_reaction(row):
-                            verified_after_send = True
-                            break
-
-                    if verified_after_send:
-                        print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (API + doğrulama)")
-                        return True
-
-                    print("  ⚠ API reaction gönderildi ancak doğrulanamadı")
-                else:
-                    print(f"  ⚠ API reaction gönderimi başarısız: {api_send_result.get('reason', 'unknown')}")
-
                 reaction_verified = False
-                interactive_target = action_target or row
+                interactive_target = await resolve_reaction_surface(row)
+                await capture_ui_probe(row, stage='before_dblclick')
 
                 for _ in range(2):
                     try:
+                        await row.scroll_into_view_if_needed()
                         await interactive_target.hover()
+                    except Exception:
+                        pass
+                    try:
+                        await interactive_target.click(timeout=1800)
                     except Exception:
                         pass
                     await interactive_target.dblclick(timeout=2500)
@@ -1593,6 +1726,7 @@ class InstagramBot:
 
                 # Çift tık başarısızsa reaction menüsünden kalp dene.
                 menu_clicked = await click_heart_via_reaction_menu(row)
+                await capture_ui_probe(row, stage='after_menu_attempt')
                 if menu_clicked and (await row_has_heart_reaction(row) or await item_has_reaction_via_api()):
                     print("  ✓ Hedef mesaja kalp reaksiyonu bırakıldı (menü + doğrulama)")
                     return True
@@ -1602,8 +1736,9 @@ class InstagramBot:
             if attempted_rows > 0:
                 print(f"  ⚠ {attempted_rows} aday mesaj denendi ancak reaksiyon doğrulanamadı")
                 return False
-        except Exception:
-            pass
+        except Exception as e:
+            self._last_reaction_debug['ui_path_error'] = str(e)[:180]
+            print(f"  ⚠ UI reaction akış hatası: {str(e)[:120]}")
 
         print("  ⚠ Hedef mesaja doğrudan reaksiyon bırakma başarısız")
         return False
@@ -1813,7 +1948,8 @@ class InstagramBot:
                             source_item_id=source_item_id,
                             source_message_id=source_message_id,
                             source_graphql_thread_id=source_graphql_thread_id,
-                            thread_url=thread_url
+                            thread_url=thread_url,
+                            source_username=username
                         )
                         if hearted:
                             results['hearted'] += 1
@@ -1829,6 +1965,10 @@ class InstagramBot:
                             'item_id_present': bool(source_item_id),
                             'message_id_present': bool(source_message_id),
                             'graphql_thread_id_present': bool(source_graphql_thread_id),
+                            'ui_probe': (getattr(self, '_last_reaction_debug', {}) or {}).get('ui_probe', []),
+                            'target_count': (getattr(self, '_last_reaction_debug', {}) or {}).get('target_count', 0),
+                            'target_select_stage': (getattr(self, '_last_reaction_debug', {}) or {}).get('target_select_stage', ''),
+                            'ui_path_error': (getattr(self, '_last_reaction_debug', {}) or {}).get('ui_path_error', ''),
                             'api_attempt': (getattr(self, '_last_reaction_debug', {}) or {}).get('api_attempt')
                         }
                     })

@@ -1765,11 +1765,11 @@ class InstagramBot:
             'details': []
         }
 
+        follow_status_cache = {}
         for i, thread_href in enumerate(thread_links, 1):
             thread_url = f'https://www.instagram.com{thread_href}' if thread_href.startswith('/') else thread_href
             print(f"\n[{i}/{len(thread_links)}] Konuşma işleniyor...")
             results['processed'] += 1
-            follow_status_cache = {}
 
             try:
                 await self.page.goto(thread_url)
@@ -1922,12 +1922,6 @@ class InstagramBot:
                         print(f"  ↺ Takip durumu cache kullanıldı: @{username} -> {follow_status}")
                     else:
                         follow_status = await self.ensure_following(username)
-
-                    if follow_status in ('unknown', 'error'):
-                        print("  ↺ Takip durumu net değil, tepkisiz mesaj için 1 kez daha deneniyor...")
-                        await self.random_delay(0.5, 1.0)
-                        follow_status = await self.ensure_following(username)
-
                     follow_status_cache[username] = follow_status
 
                     if follow_status == 'followed':
@@ -1938,7 +1932,7 @@ class InstagramBot:
                         results['already'] += 1
 
                     hearted = False
-                    if follow_status in ('followed', 'already_following'):
+                    if follow_status in ('followed', 'already_following', 'follow_attempted'):
                         # Profilden geri dönüp aynı konuşmada kalp bırak
                         await self.page.goto(thread_url)
                         await self.random_delay(0.7, 1.2)
